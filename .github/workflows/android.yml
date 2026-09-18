@@ -34,7 +34,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Locate and configure Android SDK
+      - name: Locate Android SDK
         id: sdk
         run: |
           SDKMGR=""
@@ -43,23 +43,58 @@ jobs:
             "$ANDROID_HOME/cmdline-tools/*/bin/sdkmanager" \
             "$ANDROID_HOME/tools/bin/sdkmanager" \
             "$ANDROID_HOME/embedded/tools/bin/sdkmanager" \
-            "$ANDROID_HOME/embedded/cmdline-tools/latest/bin/sdkmanager"; do
+            "$ANDROID_HOME/embedded/cmdline-tools/*/bin/sdkmanager"; do
             if [ -f "$path" ]; then
               SDKMGR="$(cd "$(dirname "$path")" && pwd)"
               break
             fi
           done
-          echo "SDKMGR=$SDKMGR"
+          echo "sdkmgr=$SDKMGR"
           echo "sdkmgr=$SDKMGR" >> "$GITHUB_OUTPUT"
 
       - name: Accept Android Licenses
         run: |
-          yes | "${{ steps.sdk.outputs.sdkmgr }}/sdkmanager" --licenses 2>&1 | grep -E "(accepted|license)" || true
+          if [ -n "${{ steps.sdk.outputs.sdkmgr }}" ]; then
+            yes | "${{ steps.sdk.outputs.sdkmgr }}/sdkmanager" --licenses 2>&1 | grep -iE "(accepted|license)" || true
+          fi
 
-      - name: Install NDK for arm64-v8a
+      - name: Install NDK
         run: |
-          "${{ steps.sdk.outputs.sdkmgr }}/sdkmanager" "ndk;27.0.11902897"
-          NDK_DIR=$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)
+          SDKMGR="${{ steps.sdk.outputs.sdkmgr }}"
+          NDK_DIR=""
+
+          # Strategy 1: Check if NDK is already installed (by workload or pre-installed)
+          if [ -d "$ANDROID_HOME/ndk" ]; then
+            NDK_DIR=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)
+            echo "Found existing NDK: $NDK_DIR"
+          fi
+
+          # Strategy 2: Install via sdkmanager (try multiple NDK versions)
+          if [ -z "$NDK_DIR" ] && [ -n "$SDKMGR" ]; then
+            "$SDKMGR" --update 2>&1 | tail -1 || true
+            for v in "27.0.11902897" "27.0.12179864" "26.1.10909125" "25.2.9519183"; do
+              if "$SDKMGR" "ndk;${v}" 2>&1 | grep -qiE "error|fail"; then
+                echo "NDK $v not found, trying next..."
+              else
+                NDK_DIR="$ANDROID_HOME/ndk/${v}"
+                echo "Installed NDK $v: $NDK_DIR"
+                break
+              fi
+            done
+          fi
+
+          # Strategy 3: Download NDK directly via curl (bypasses sdkmanager)
+          if [ -z "$NDK_DIR" ]; then
+            echo "Downloading NDK r26d directly..."
+            NDK_VERSION="r26d"
+            NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+            curl -fsSL -o /tmp/ndk.zip "$NDK_URL"
+            mkdir -p "$ANDROID_HOME"
+            unzip -q /tmp/ndk.zip -o -d "$ANDROID_HOME"
+            NDK_DIR="$ANDROID_HOME/android-ndk-${NDK_VERSION}"
+            echo "Downloaded NDK to: $NDK_DIR"
+          fi
+
           echo "NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
 
       - name: Build native libraries (arm64-v8a)
