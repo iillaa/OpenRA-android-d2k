@@ -38,6 +38,12 @@ namespace OpenRA.Platforms.Android
 		volatile bool surfaceAvailable;
 		Size surfaceSize;
 
+		// Set by SuspendRendering (UI thread, from OnPause) and cleared by ResumeRendering
+		// (UI thread, from OnResume). While true the render loop skips Present so we don't
+		// race EGL teardown. Surface recreation itself still happens on the game thread in
+		// EnsureCurrentSurface.
+		volatile bool renderingSuspended;
+
 		// DPI: Android exposes density. We treat EffectiveWindowScale == 1 for Phase 0 and let
 		// the engine scale UI from its own settings; surface/native sizes are reported in pixels.
 		float nativeScale = 1f;
@@ -50,7 +56,7 @@ namespace OpenRA.Platforms.Android
 		public int DisplayCount => 1;
 		public int CurrentDisplay => 0;
 		public bool HasInputFocus => true;
-		public bool IsSuspended => !surfaceAvailable;
+		public bool IsSuspended => !surfaceAvailable || renderingSuspended;
 
 		public event Action<float, float, float, float> OnWindowScaleChanged;
 
@@ -84,6 +90,13 @@ namespace OpenRA.Platforms.Android
 		// Set when a new holder has arrived and the EGL surface needs (re)creation on the game thread.
 		volatile bool surfaceNeedsRecreate;
 
+		// Set when a new EGL surface has been created (by NotifySurfaceReady or EnsureCurrentSurface).
+		// EnsureCurrentSurface uses this to call eglMakeCurrent on the game thread so the new
+		// surface is bound before Present calls eglSwapBuffers. Without this, surface recreation
+		// during pause/resume leaves the stale (destroyed) surface bound, causing eglSwapBuffers
+		// to fail with EGL_BAD_SURFACE → black screen on resume.
+		volatile bool surfaceRecreated;
+
 		// Called by the Activity's ISurfaceHolderCallback when the surface is created/changed.
 		public void NotifySurfaceReady(global::Android.Views.ISurfaceHolder holder)
 		{
@@ -115,6 +128,7 @@ namespace OpenRA.Platforms.Android
 
 					surfaceAvailable = true;
 					surfaceNeedsRecreate = false;
+					surfaceRecreated = true;
 				}
 				catch (Exception e)
 				{
@@ -126,13 +140,29 @@ namespace OpenRA.Platforms.Android
 		}
 
 		// Called by the Activity's ISurfaceHolderCallback when the surface is destroyed.
+		// Runs on the UI thread. We must not call EGL destroy here (EGL surface ops belong
+		// to the game thread that owns the context); instead just flip flags so the game
+		// thread's EnsureCurrentSurface handles teardown/recreate safely.
 		public void NotifySurfaceDestroyed()
 		{
-			// With eager EGL setup we intentionally keep the EGL surface across Android's surface
-			// churn: once EGL has created a window surface from the ANativeWindow, the underlying
-			// gralloc buffer stays valid for the render loop. If the surface genuinely dies, the
-			// swap in Present reports EGL_BAD_SURFACE and InvalidateSurface schedules a clean
-			// recreate on the next NotifySurfaceReady. So this is a no-op for Phase 0.
+			lock (surfaceGate)
+			{
+				surfaceAvailable = false;
+				surfaceNeedsRecreate = true;
+				Monitor.PulseAll(surfaceGate);
+			}
+		}
+
+		// Called from OnPause to stop the render loop during app backgrounding.
+		public void SuspendRendering()
+		{
+			renderingSuspended = true;
+		}
+
+		// Called from OnResume to resume the render loop after app foregrounding.
+		public void ResumeRendering()
+		{
+			renderingSuspended = false;
 		}
 
 		// Called on the game thread before any GL work (Present). Recreates the EGL surface if the
@@ -140,36 +170,69 @@ namespace OpenRA.Platforms.Android
 		// surface lifecycle on the game thread, matching the EGL context's thread affinity.
 		internal void EnsureCurrentSurface()
 		{
-			// Nothing to do if no recreation was requested, or if we still hold a valid EGL surface
-			// (the eager-create model keeps the surface alive across churn).
-			if (!surfaceNeedsRecreate || eglSurface != Egl.EGL_NO_SURFACE)
+			// Handle teardown/recreation requests (from NotifySurfaceDestroyed or InvalidateSurface).
+			if (surfaceNeedsRecreate)
 			{
-				surfaceNeedsRecreate = false;
-				return;
-			}
-
-			surfaceNeedsRecreate = false;
-
-			// Tear down any existing EGL surface first.
-			if (eglDisplay != Egl.EGL_NO_DISPLAY)
-			{
-				if (eglSurface != Egl.EGL_NO_SURFACE)
+				// Tear down any existing EGL surface first. We hold the only reference to the EGL
+				// surface (created by NotifySurfaceReady or a prior EnsureCurrentSurface call), so
+				// destroying it here is safe.
+				if (eglDisplay != Egl.EGL_NO_DISPLAY && eglSurface != Egl.EGL_NO_SURFACE)
 				{
-					Egl.eglMakeCurrent(eglDisplay, Egl.EGL_NO_SURFACE, Egl.EGL_NO_SURFACE, Egl.EGL_NO_CONTEXT);
+					if (!Egl.eglMakeCurrent(eglDisplay, Egl.EGL_NO_SURFACE, Egl.EGL_NO_SURFACE, Egl.EGL_NO_CONTEXT))
+						global::Android.Util.Log.Warn("OpenRA", $"EnsureCurrentSurface: eglMakeCurrent(NO_SURFACE) failed: 0x{Egl.eglGetError():X}");
+
 					Egl.eglDestroySurface(eglDisplay, eglSurface);
 					eglSurface = Egl.EGL_NO_SURFACE;
 				}
+
+				// If a new Android surface is available and we don't already have an EGL surface,
+				// build a new one from the pending holder. The eglSurface == NO_SURFACE guard
+				// prevents a double-create race with NotifySurfaceReady (UI thread) which may
+				// have already recreated the surface between our teardown and this check.
+				global::Android.Views.ISurfaceHolder holder;
+				lock (surfaceGate)
+					holder = pendingHolder;
+
+				var createdNew = false;
+				if (surfaceAvailable && holder != null && eglDisplay != Egl.EGL_NO_DISPLAY
+					&& eglSurface == Egl.EGL_NO_SURFACE)
+				{
+					try
+					{
+						CreateEglSurface(holder);
+						if (!Egl.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext))
+							global::Android.Util.Log.Error("OpenRA", $"EnsureCurrentSurface: eglMakeCurrent failed: 0x{Egl.eglGetError():X}");
+						createdNew = true;
+					}
+					catch (Exception e)
+					{
+						global::Android.Util.Log.Error("OpenRA", $"EnsureCurrentSurface: CreateEglSurface failed: {e}");
+						// Creation failed: keep surfaceNeedsRecreate set so we retry next frame.
+					}
+				}
+				else if (surfaceAvailable && eglSurface != Egl.EGL_NO_SURFACE)
+				{
+					// NotifySurfaceReady already recreated the surface; mark for rebinding.
+					createdNew = true;
+				}
+
+				if (createdNew)
+				{
+					surfaceNeedsRecreate = false;
+					surfaceRecreated = true;
+				}
 			}
 
-			// If a new Android surface is available, build a new EGL surface for it.
-			global::Android.Views.ISurfaceHolder holder;
-			lock (surfaceGate)
-				holder = pendingHolder;
-
-			if (surfaceAvailable && holder != null && eglDisplay != Egl.EGL_NO_DISPLAY)
+			// After any surface (re)creation — by us above or by NotifySurfaceReady (UI thread)
+			// while the game thread was suspended — bind the new EGL surface to this thread so
+			// eglSwapBuffers in Present has a current surface to swap. Without this, surface
+			// recreation during pause/resume leaves the destroyed surface bound → black screen.
+			if (surfaceRecreated && surfaceAvailable && eglSurface != Egl.EGL_NO_SURFACE
+				&& eglDisplay != Egl.EGL_NO_DISPLAY)
 			{
-				try { CreateEglSurface(holder); }
-				catch (Exception e) { global::Android.Util.Log.Error("OpenRA", $"CreateEglSurface on recreate: {e}"); }
+				if (!Egl.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext))
+					global::Android.Util.Log.Warn("OpenRA", $"EnsureCurrentSurface: rebind eglMakeCurrent failed: 0x{Egl.eglGetError():X}");
+				surfaceRecreated = false;
 			}
 		}
 
@@ -310,6 +373,11 @@ namespace OpenRA.Platforms.Android
 
 		// Input posted from the UI thread (OpenRASurfaceView.OnTouchEvent).
 		public void EnqueueMotion(MotionEvent e) => input.Enqueue(e, EffectiveWindowSize);
+
+		// Input posted from the UI thread (OpenRASurfaceView.OnGenericMotionEvent).
+		// Hardware mouse / trackball motion is routed through a separate path so the
+		// long-press timer and touch state machine are bypassed.
+		public void EnqueueMouseMotion(MotionEvent e) => input.EnqueueMouse(e, EffectiveWindowSize);
 
 		public string GetClipboardText() => string.Empty;
 		public bool SetClipboardText(string text) => false;

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<!-- Dune 2000 house colours -->
+	<color name="d2k_spice_orange">#FF6B0A</color>
+	<color name="d2k_atreides_blue">#0078D7</color>
+	<color name="d2k_harkonnen_red">#C50F1F</color>
+	<color name="ic_launcher_background">#FF6B0A</color>
+	<color name="ic_launcher_foreground">#0078D7</color>
+</resources>

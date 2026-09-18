@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+	android:width="108dp"
+	android:height="108dp"
+	android:viewportWidth="108"
+	android:viewportHeight="108"
+	android:gravity="center">
+	<!-- Spice-orange shield background -->
+	<path
+		android:fillColor="#FF6B0A"
+		android:pathData="M54,10 L94,22 L94,54 C94,80 80,94 54,98 C28,94 14,80 14,54 L14,22 Z" />
+	<!-- Atreides hawk silhouette (stylized) in blue -->
+	<path
+		android:fillColor="#0078D7"
+		android:pathData="M54,30 L64,44 L76,40 L68,52 L72,66 L54,58 L36,66 L40,52 L32,40 L44,44 Z" />
+	<!-- Hawk body -->
+	<path
+		android:fillColor="#0078D7"
+		android:pathData="M54,50 C58,48 62,52 60,56 C58,60 52,62 48,58 C50,56 52,54 54,50 Z" />
+</vector>

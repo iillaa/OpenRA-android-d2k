@@ -22,7 +22,7 @@ namespace OpenRA.Mods.Common.Traits
 	public class AutoSaveSettings : SettingsModule
 	{
 		[Desc("Sets the Auto-save frequency, in seconds")]
-		public int AutoSaveInterval = 0;
+		public int AutoSaveInterval = 60;
 
 		[Desc("Sets the AutoSave number of max files to bes saved on the file-system")]
 		public int AutoSaveMaxFileCount = 10;
