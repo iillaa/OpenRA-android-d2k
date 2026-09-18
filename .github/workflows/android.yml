@@ -10,6 +10,10 @@ jobs:
   build-apk:
     runs-on: ubuntu-22.04
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,18 +34,37 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK + NDK
-        uses: android-actions/setup-android@v2
-        with:
-          api-level: 34
-          build-tools: "34.0.0"
-          ndk: "27.0.11902897"
+      - name: Locate and configure Android SDK
+        id: sdk
+        run: |
+          SDKMGR=""
+          for path in \
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_HOME/cmdline-tools/*/bin/sdkmanager" \
+            "$ANDROID_HOME/tools/bin/sdkmanager" \
+            "$ANDROID_HOME/embedded/tools/bin/sdkmanager" \
+            "$ANDROID_HOME/embedded/cmdline-tools/latest/bin/sdkmanager"; do
+            if [ -f "$path" ]; then
+              SDKMGR="$(cd "$(dirname "$path")" && pwd)"
+              break
+            fi
+          done
+          echo "SDKMGR=$SDKMGR"
+          echo "sdkmgr=$SDKMGR" >> "$GITHUB_OUTPUT"
+
+      - name: Accept Android Licenses
+        run: |
+          yes | "${{ steps.sdk.outputs.sdkmgr }}/sdkmanager" --licenses 2>&1 | grep -E "(accepted|license)" || true
+
+      - name: Install NDK for arm64-v8a
+        run: |
+          "${{ steps.sdk.outputs.sdkmgr }}/sdkmanager" "ndk;27.0.11902897"
+          NDK_DIR=$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)
+          echo "NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
 
       - name: Build native libraries (arm64-v8a)
         run: |
-          NDK_PATH="${ANDROID_HOME}/ndk/$(ls "${ANDROID_HOME}/ndk")"
-          echo "NDK_PATH=$NDK_PATH"
-          bash thirdparty/build-android-linux.sh "$NDK_PATH"
+          bash thirdparty/build-android-linux.sh "$NDK_ROOT"
 
       - name: Verify native libraries
         run: |
@@ -57,7 +80,6 @@ jobs:
         run: |
           APK=$(find OpenRA.Android/bin/Release -name "*.apk" | head -1)
           echo "apk=$APK" >> $GITHUB_OUTPUT
-          echo "apk_path=$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
