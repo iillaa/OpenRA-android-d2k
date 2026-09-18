@@ -23,7 +23,6 @@ jobs:
         run: |
           dotnet workload install android
           dotnet workload restore
-          echo "/usr/share/android/" > $HOME/Android_SDK_LICENSE 2>/dev/null || true
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -31,31 +30,18 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Locate SDK + NDK
-        id: sdk
-        run: |
-          ANDROID_HOME=$(dirname $(dirname $(which dotnet)) 2>/dev/null || echo "$HOME/.local/share/dotnet")
-          # dotnet workload installs the Android SDK under the workload packs directory
-          SDK_DIR=$(find $HOME/.dotnet/x64 -name "sdk" -type d 2>/dev/null | head -1)
-          if [ -z "$SDK_DIR" ]; then
-            SDK_DIR=$HOME/Library/Android/sdk
-          fi
-          echo "sdk_dir=$SDK_DIR"
-          echo "ndk_dir=$SDK_DIR/ndk/$(ls $SDK_DIR/ndk 2>/dev/null | head -1)"
-          echo "sdk=$SDK_DIR" >> $GITHUB_OUTPUT
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v2
+        with:
+          api-level: 34
+          build-tools: "34.0.0"
+          ndk: "27.0.11902897"
 
       - name: Build native libraries (arm64-v8a)
-        env:
-          ANDROID_HOME: ${{ steps.sdk.outputs.sdk }}
-          NDK_ROOT: ${{ steps.sdk.outputs.ndk_dir }}
         run: |
-          if [ -z "$NDK_ROOT" ] || [ ! -d "$NDK_ROOT" ]; then
-            echo "NDK not found via workload; installing via sdkmanager"
-            ${ANDROID_HOME}/tools/bin/sdkmanager "ndk;27.0.11902897" 2>/dev/null || \
-              ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "ndk;27.0.12179864" 2>/dev/null
-            NDK_ROOT=${ANDROID_HOME}/ndk/$(ls ${ANDROID_HOME}/ndk | head -1)
-          fi
-          bash thirdparty/build-android-linux.sh "$NDK_ROOT"
+          NDK_PATH="${ANDROID_HOME}/ndk/$(ls "${ANDROID_HOME}/ndk")"
+          echo "NDK_PATH=$NDK_PATH"
+          bash thirdparty/build-android-linux.sh "$NDK_PATH"
 
       - name: Verify native libraries
         run: |
