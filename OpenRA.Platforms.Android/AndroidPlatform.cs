@@ -141,19 +141,35 @@ namespace OpenRA.Platforms.Android
 				NativeLibrary.SetDllImportResolver(targetAssembly, (libraryName, asm, searchPath) =>
 				{
 					PLog("Resolver", $"DllImport requested: '{libraryName}' in {asm?.GetName()?.Name}");
-					if (libraryName == "freetype6" || libraryName == "libfreetype6" || libraryName == "libfreetype6.so")
+					if (libraryName == "freetype6" || libraryName == "libfreetype6" || libraryName == "libfreetype6.so"
+						|| libraryName == "freetype" || libraryName == "libfreetype" || libraryName == "libfreetype.so")
 					{
 						if (freetypeHandle != IntPtr.Zero)
 							return freetypeHandle;
 
 						if (freetypePath != null && NativeLibrary.TryLoad(freetypePath, asm, searchPath, out var h))
+						{
+							PLog("Resolver", $"Loaded via freetypePath: {h}");
 							return freetypeHandle = h;
+						}
 
 						if (NativeLibrary.TryLoad("libfreetype6.so", asm, searchPath, out h))
+						{
+							PLog("Resolver", $"Loaded via libfreetype6.so: {h}");
 							return freetypeHandle = h;
+						}
+
+						if (NativeLibrary.TryLoad("libfreetype.so", asm, searchPath, out h))
+						{
+							PLog("Resolver", $"Loaded via libfreetype.so: {h}");
+							return freetypeHandle = h;
+						}
 
 						if (NativeLibrary.TryLoad("freetype6", asm, searchPath, out h))
+						{
+							PLog("Resolver", $"Loaded via freetype6: {h}");
 							return freetypeHandle = h;
+						}
 
 						PLogError("Resolver", $"Failed to resolve '{libraryName}'!");
 					}
@@ -165,13 +181,12 @@ namespace OpenRA.Platforms.Android
 			}
 			catch (Exception ex)
 			{
-				PLogError("FreeType", $"SetDllImportResolver FAILED: {ex.Message}");
+				PLogError("FreeType", $"SetDllImportResolver FAILED: {ex}");
 			}
 		}
 
 		static AndroidPlatform()
 		{
-			Initialize(global::Android.App.Application.Context);
 		}
 
 		public static void SetWindow(AndroidPlatformWindow window) => Window = window;
