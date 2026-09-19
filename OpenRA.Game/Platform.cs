@@ -253,7 +253,11 @@ namespace OpenRA
 		public static void OverrideEngineDir(string path)
 		{
 			if (engineDirAccessed)
+			{
+				if (engineDir != null && (engineDir == path || engineDir.TrimEnd('/', '\\') == path.TrimEnd('/', '\\')))
+					return;
 				throw new InvalidOperationException("Attempted to override engine directory after it has already been accessed.");
+			}
 
 			// Note: Relative paths are interpreted as being relative to BinDir, not the current working dir.
 			if (!Path.IsPathRooted(path))
