@@ -320,11 +320,11 @@ namespace OpenRA
 		public string Platform = "Default";
 
 		public bool ViewportEdgeScroll = true;
-		public int ViewportEdgeScrollMargin = 5;
+		public int ViewportEdgeScrollMargin = 15;
 
 		public bool LockMouseWindow = false;
-		public MouseControlStyle MouseControlStyle = MouseControlStyle.Modern;
-		public MouseScrollType MouseScroll = MouseScrollType.Joystick;
+		public MouseControlStyle MouseControlStyle = OperatingSystem.IsAndroid() ? MouseControlStyle.Classic : MouseControlStyle.Modern;
+		public MouseScrollType MouseScroll = OperatingSystem.IsAndroid() ? MouseScrollType.Standard : MouseScrollType.Joystick;
 		public float ViewportEdgeScrollStep = 30f;
 		public float UIScrollSpeed = 50f;
 		public float ZoomSpeed = 0.04f;

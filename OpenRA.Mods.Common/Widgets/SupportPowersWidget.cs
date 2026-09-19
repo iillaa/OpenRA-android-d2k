@@ -209,7 +209,7 @@ namespace OpenRA.Mods.Common.Widgets
 			Game.Renderer.EnableAntialiasingFilter();
 			foreach (var p in icons.Values)
 			{
-				var iconScale = p.Sprite != null && p.Sprite.Size.X > 0 ? (float)IconSize.X / p.Sprite.Size.X : 1f;
+				var iconScale = p.Sprite != null && p.Sprite.Size.X > 0 ? IconSize.X / p.Sprite.Size.X : 1f;
 				WidgetUtils.DrawSpriteCentered(p.Sprite, p.Palette, p.Pos + iconOffset, iconScale);
 
 				// Charge progress
@@ -219,7 +219,7 @@ namespace OpenRA.Mods.Common.Widgets
 					* (clock.CurrentSequence.Length - 1) / sp.TotalTicks);
 
 				clock.Tick();
-				var clockScale = clock.Image != null && clock.Image.Size.X > 0 ? (float)IconSize.X / clock.Image.Size.X : iconScale;
+				var clockScale = clock.Image != null && clock.Image.Size.X > 0 ? IconSize.X / clock.Image.Size.X : iconScale;
 				WidgetUtils.DrawSpriteCentered(clock.Image, p.IconClockPalette, p.Pos + iconOffset, clockScale);
 			}
 

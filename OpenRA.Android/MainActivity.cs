@@ -142,7 +142,10 @@ namespace OpenRA.Android
 			{
 				$"Engine.EngineDir={engineDir}",
 				$"Engine.SupportDir={supportDir}",
-				"Game.Mod=d2k"
+				"Game.Mod=d2k",
+				"Game.MouseControlStyle=Classic",
+				"Game.MouseScroll=Standard",
+				"Game.ViewportEdgeScrollMargin=15"
 			};
 
 			if (!File.Exists(settingsPath))
@@ -262,8 +265,21 @@ namespace OpenRA.Android
 				FocusableInTouchMode = true;
 			}
 
+			static bool IsMouseEvent(MotionEvent e)
+			{
+				return e.IsFromSource(InputSourceType.Mouse)
+					|| (int)e.GetToolType(0) == 3 // MotionEventToolType.Mouse
+					|| e.ButtonState != 0;
+			}
+
 			public override bool OnTouchEvent(MotionEvent e)
 			{
+				if (IsMouseEvent(e))
+				{
+					window.EnqueueMouseMotion(e);
+					return true;
+				}
+
 				window.EnqueueMotion(e);
 				return true;
 			}
@@ -271,17 +287,10 @@ namespace OpenRA.Android
 			// Hardware mouse / trackball motion is delivered here (not via OnTouchEvent).
 			// Detect mouse source and route to the dedicated mouse input path so left/right/
 			// middle clicks and hover movement are handled instantly with no long-press delay.
-			// Also request pointer capture (API 26+) so edge-panning isn't intercepted by
-			// Android's system gesture bars.
 			public override bool OnGenericMotionEvent(MotionEvent e)
 			{
-				if (e.IsFromSource(InputSourceType.Mouse))
+				if (IsMouseEvent(e))
 				{
-					// Request pointer capture (API 26+) so edge-panning isn't intercepted by
-					// Android's system gesture bars.
-					if ((int)global::Android.OS.Build.VERSION.SdkInt >= 26)
-						RequestPointerCapture();
-
 					window.EnqueueMouseMotion(e);
 					return true;
 				}
@@ -289,6 +298,17 @@ namespace OpenRA.Android
 				// Non-mouse generic motion (e.g. stylus) — fall back to the touch path.
 				window.EnqueueMotion(e);
 				return true;
+			}
+
+			public override bool OnHoverEvent(MotionEvent e)
+			{
+				if (IsMouseEvent(e))
+				{
+					window.EnqueueMouseMotion(e);
+					return true;
+				}
+
+				return base.OnHoverEvent(e);
 			}
 
 			// Capture hardware keyboard events (also some IME key events like backspace).
