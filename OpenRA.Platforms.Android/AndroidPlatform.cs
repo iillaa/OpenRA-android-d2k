@@ -61,10 +61,16 @@ namespace OpenRA.Platforms.Android
 			{
 				var nativeLibDir = global::Android.App.Application.Context.ApplicationInfo.NativeLibraryDir;
 				var freetypePath = System.IO.Path.Combine(nativeLibDir, "libfreetype6.so");
-				global::Android.Util.Log.Info("OpenRA", $"FreeType resolver: nativeLibDir={nativeLibDir}, path={freetypePath}, exists={System.IO.File.Exists(freetypePath)}");
+				var exists = System.IO.File.Exists(freetypePath);
+				global::Android.Util.Log.Info("OpenRA", $"FreeType resolver: nativeLibDir={nativeLibDir}, path={freetypePath}, exists={exists}");
+
+				// Also dump to sdcard so Termux can read it without ADB
+				System.IO.File.WriteAllText("/sdcard/openra_freetype_diag.txt",
+					$"nativeLibDir: {nativeLibDir}\npath: {freetypePath}\nexists: {exists}\n");
 
 				var freetypeHandle = NativeLibrary.Load(freetypePath);
 				global::Android.Util.Log.Info("OpenRA", $"FreeType pre-loaded via NativeLibrary.Load: handle={freetypeHandle}");
+				System.IO.File.AppendAllText("/sdcard/openra_freetype_diag.txt", $"handle: {freetypeHandle}\n");
 
 				var thisAssembly = Assembly.GetExecutingAssembly();
 				NativeLibrary.SetDllImportResolver(thisAssembly, (libraryName, asm, searchPath) =>
@@ -78,6 +84,7 @@ namespace OpenRA.Platforms.Android
 			catch (Exception ex)
 			{
 				global::Android.Util.Log.Error("OpenRA", $"FreeType resolver setup failed: {ex}");
+				try { System.IO.File.AppendAllText("/sdcard/openra_freetype_diag.txt", $"EXCEPTION: {ex}\n"); } catch { }
 			}
 		}
 
