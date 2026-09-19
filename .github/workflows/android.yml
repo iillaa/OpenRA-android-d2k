@@ -28,21 +28,6 @@ jobs:
           dotnet workload install android
           dotnet workload restore
 
-      - name: Verify SDK
-        run: |
-          echo "dotnet: $(dotnet --version)"
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "JAVA_HOME=$JAVA_HOME"
-          which java
-          java -version 2>&1
-          echo "=== sdkmanager locations ==="
-          for path in \
-            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "$ANDROID_HOME/cmdline-tools/*/bin/sdkmanager" \
-            "$ANDROID_HOME/tools/bin/sdkmanager"; do
-            [ -f "$path" ] && echo "Found: $path"
-          done
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
