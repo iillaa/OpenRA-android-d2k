@@ -37,6 +37,12 @@ namespace OpenRA.Platforms.Android
 
 			try
 			{
+				Java.Lang.JavaSystem.LoadLibrary("freetype6");
+			}
+			catch { /* may throw if already loaded — that's fine */ }
+
+			try
+			{
 				var openalAssembly = Assembly.Load("OpenAL-CS");
 				NativeLibrary.SetDllImportResolver(openalAssembly, (libraryName, asm, searchPath) =>
 				{
@@ -44,6 +50,24 @@ namespace OpenRA.Platforms.Android
 					{
 						// Try several name variants that .NET Android may search for.
 						foreach (var name in new[] { "soft_oal", "libsoft_oal.so", "libsoft_oal" })
+							if (NativeLibrary.TryLoad(name, asm, DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.UserDirectories, out var handle))
+								return handle;
+					}
+
+					return IntPtr.Zero;
+				});
+			}
+			catch { }
+
+			// Also register a resolver for the current assembly (which contains FreeType imports)
+			try
+			{
+				var thisAssembly = Assembly.GetExecutingAssembly();
+				NativeLibrary.SetDllImportResolver(thisAssembly, (libraryName, asm, searchPath) =>
+				{
+					if (libraryName == "freetype6")
+					{
+						foreach (var name in new[] { "freetype6", "libfreetype6.so", "libfreetype6" })
 							if (NativeLibrary.TryLoad(name, asm, DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.UserDirectories, out var handle))
 								return handle;
 					}
