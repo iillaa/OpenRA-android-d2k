@@ -398,11 +398,12 @@ namespace OpenRA.Android
 			};
 
 			var line  = entry.Format() + "\n";
-			var start = span.Length;
+			int start = span.Length();
 			span.Append(line);
+			int end = span.Length();
 			span.SetSpan(
 				new global::Android.Text.Style.ForegroundColorSpan(color),
-				start, span.Length,
+				start, end,
 				SpanTypes.ExclusiveExclusive);
 		}
 	}
