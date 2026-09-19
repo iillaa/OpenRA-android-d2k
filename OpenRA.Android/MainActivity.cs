@@ -25,6 +25,8 @@ using OpenRA.Platforms.Android;
 // into the final AndroidManifest.xml.
 [assembly: UsesPermission(Android.Manifest.Permission.Internet)]
 [assembly: UsesPermission(Android.Manifest.Permission.AccessNetworkState)]
+[assembly: UsesPermission(Android.Manifest.Permission.ReadExternalStorage, MaxSdkVersion = 32)]
+[assembly: UsesPermission(Android.Manifest.Permission.WriteExternalStorage, MaxSdkVersion = 32)]
 
 namespace OpenRA.Android
 {
@@ -57,6 +59,9 @@ namespace OpenRA.Android
 			supportDir = Path.Combine(GetExternalFilesDir(null).AbsolutePath, "Support") + Path.DirectorySeparatorChar;
 			Directory.CreateDirectory(supportDir);
 
+			// Automatically import custom music (.aud) and movies (.vqa) from Download/d2k if present
+			SyncCustomContentFromDownloads(supportDir);
+
 			// Wire platform logs → in-app DevConsole first so all initialization logs are captured
 			AndroidPlatform.PlatformLogger      = (tag, msg) => DevConsole.Info(tag, msg);
 			AndroidPlatform.PlatformErrorLogger = (tag, msg) => DevConsole.Error(tag, msg);
@@ -88,6 +93,97 @@ namespace OpenRA.Android
 			// Start the engine loop immediately. The window's WaitForSurfaceAndInitializeGl handles
 			// the Android surface churn (create->destroy->create during layout) by retrying.
 			StartEngineOnce();
+		}
+
+		void SyncCustomContentFromDownloads(string targetSupportDir)
+		{
+			try
+			{
+				var downloadPath = global::Android.OS.Environment.GetExternalStoragePublicDirectory(global::Android.OS.Environment.DirectoryDownloads)?.AbsolutePath
+					?? "/storage/emulated/0/Download";
+
+				var candidateDirs = new[]
+				{
+					Path.Combine(downloadPath, "d2k"),
+					Path.Combine(downloadPath, "D2K"),
+					"/storage/emulated/0/Download/d2k",
+					"/sdcard/Download/d2k"
+				};
+
+				string d2kDir = null;
+				foreach (var dir in candidateDirs)
+				{
+					if (Directory.Exists(dir))
+					{
+						d2kDir = dir;
+						break;
+					}
+				}
+
+				if (d2kDir == null)
+					return;
+
+				var destMusic = Path.Combine(targetSupportDir, "Content", "d2k", "v3", "Music");
+				var destMovies = Path.Combine(targetSupportDir, "Content", "d2k", "v3", "Movies");
+				int importedCount = 0;
+
+				void ImportFilesFrom(string sourceDir)
+				{
+					if (!Directory.Exists(sourceDir))
+						return;
+
+					foreach (var file in Directory.GetFiles(sourceDir))
+					{
+						var name = Path.GetFileName(file);
+						if (name.EndsWith(".aud", StringComparison.OrdinalIgnoreCase))
+						{
+							Directory.CreateDirectory(destMusic);
+							var target = Path.Combine(destMusic, name);
+							if (!File.Exists(target) || new FileInfo(file).Length != new FileInfo(target).Length)
+							{
+								File.Copy(file, target, true);
+								importedCount++;
+								DevConsole.Info("Content", $"Imported music track: {name}");
+							}
+						}
+						else if (name.EndsWith(".vqa", StringComparison.OrdinalIgnoreCase))
+						{
+							Directory.CreateDirectory(destMovies);
+							var target = Path.Combine(destMovies, name);
+							if (!File.Exists(target) || new FileInfo(file).Length != new FileInfo(target).Length)
+							{
+								File.Copy(file, target, true);
+								importedCount++;
+								DevConsole.Info("Content", $"Imported movie cutscene: {name}");
+							}
+						}
+					}
+				}
+
+				// 1. Check root d2k folder directly
+				ImportFilesFrom(d2kDir);
+
+				// 2. Check Music subfolder
+				ImportFilesFrom(Path.Combine(d2kDir, "Music"));
+				ImportFilesFrom(Path.Combine(d2kDir, "music"));
+
+				// 3. Check Movies subfolder
+				ImportFilesFrom(Path.Combine(d2kDir, "Movies"));
+				ImportFilesFrom(Path.Combine(d2kDir, "movies"));
+
+				if (importedCount > 0)
+				{
+					DevConsole.Info("Content", $"Successfully imported {importedCount} files from {d2kDir}");
+					RunOnUiThread(() =>
+					{
+						Toast.MakeText(this, $"Imported {importedCount} Dune 2000 music/movie files!", ToastLength.Long)?.Show();
+					});
+				}
+			}
+			catch (Exception ex)
+			{
+				DevConsole.Warn("Content", $"Could not sync Download/d2k: {ex.Message}");
+			}
 		}
 
 		// Compute a tablet-aware default UI scale for the first launch. On high-DPI tablets the

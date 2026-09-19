@@ -108,9 +108,10 @@ Implemented in [`DevConsole.cs`](file:///data/data/com.termux/files/home/chat/du
   * 🟡 **Warnings & Performance Hints**: Yellow
   * 🔴 **Exceptions & Critical Errors**: Bright Red
 * **Interactive Controls**:
-  * **Clear**: Clears buffered log entries.
-  * **Copy**: Copies the entire log history directly to the Android system clipboard.
-  * **Close**: Minimizes the console back into the floating bubble.
+  * **Copy (`📋`)**: Copies the entire log history directly to the Android system clipboard.
+  * **Disable / Off (`🛑 Off`)**: Shuts down logging, detaches delegates to eliminate all CPU/RAM overhead, and completely hides the floating bubble until the next app launch.
+  * **Clear (`🗑`)**: Clears buffered log entries and frees memory.
+  * **Close (`✕`)**: Minimizes the console back into the floating bubble.
 * **Auto-Expand on Crash**: If an unhandled exception or critical error occurs during gameplay, the DevConsole automatically expands so you can see the stack trace instantly.
 
 ### B. CrashLogActivity

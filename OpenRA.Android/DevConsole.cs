@@ -53,9 +53,19 @@ namespace OpenRA.Android
 		static readonly object Lock = new();
 		static readonly List<LogEntry> Entries = new();
 		const int MaxEntries = 3000;
+		public static volatile bool IsDisabled = false;
+
+		public static void Disable()
+		{
+			IsDisabled = true;
+			Clear();
+		}
 
 		public static void Log(LogLevel level, string tag, string message)
 		{
+			if (IsDisabled)
+				return;
+
 			var entry = new LogEntry(level, tag, message);
 
 			var androidPriority = level switch
@@ -304,6 +314,21 @@ namespace OpenRA.Android
 				}
 			});
 
+			var shutdownBtn = MakeHeaderBtn("🛑 Off", () =>
+			{
+				DevConsole.Disable();
+				OpenRA.Log.OnLogMessage = null;
+				AndroidPlatform.PlatformLogger = null;
+				AndroidPlatform.PlatformErrorLogger = null;
+				HidePanel();
+				if (_bubble != null)
+					_bubble.Visibility = ViewStates.Gone;
+				if (_root != null)
+					_root.Visibility = ViewStates.Gone;
+				Toast.MakeText(_activity, "DevConsole disabled until next launch.", ToastLength.Long)?.Show();
+			});
+			shutdownBtn.SetBackgroundColor(Color.ParseColor("#553311"));
+
 			var clearBtn = MakeHeaderBtn("🗑", () =>
 			{
 				DevConsole.Clear();
@@ -315,6 +340,7 @@ namespace OpenRA.Android
 
 			header.AddView(titleTv);
 			header.AddView(copyBtn);
+			header.AddView(shutdownBtn);
 			header.AddView(clearBtn);
 			header.AddView(closeBtn);
 

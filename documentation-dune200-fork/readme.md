@@ -48,6 +48,13 @@ This project brings Westwood Studios' legendary classic RTS *Dune 2000* to moder
 3. Extract the APK file and install it on your Android device (ensure *Install from unknown sources* is enabled).
 4. Launch **Dune 2000**. On first run, the game will automatically download the freeware game content (original audio, FMV sequences, and campaign assets) directly from OpenRA mirrors.
 
+### Adding Custom Music & Movies (FMVs)
+To add high-quality music (`.AUD`) or campaign video cutscenes (`.VQA`), place them in your device's standard **Download** folder:
+* **Music**: `/storage/emulated/0/Download/d2k/Music/`
+* **Movies**: `/storage/emulated/0/Download/d2k/Movies/`
+
+On launch, the game automatically detects and imports them into its internal storage—no PC, root, or file manager hacks required!
+
 ---
 
 ## Documentation Index
