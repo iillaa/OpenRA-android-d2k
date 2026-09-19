@@ -266,9 +266,10 @@ namespace OpenRA.Platforms.Android
 
 		public static string glGetString(int name)
 		{
+			var ptr = glGetStringInternal(name);
 			unsafe
 			{
-				return new string((sbyte*)glGetStringInternal(name));
+				return ptr == IntPtr.Zero ? "" : new string((sbyte*)ptr);
 			}
 		}
 
@@ -277,9 +278,10 @@ namespace OpenRA.Platforms.Android
 
 		public static string glGetStringi(int name, uint index)
 		{
+			var ptr = glGetStringiInternal(name, index);
 			unsafe
 			{
-				return new string((sbyte*)glGetStringiInternal(name, index));
+				return ptr == IntPtr.Zero ? "" : new string((sbyte*)ptr);
 			}
 		}
 
