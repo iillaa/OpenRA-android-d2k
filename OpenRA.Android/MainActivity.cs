@@ -144,7 +144,16 @@ namespace OpenRA.Android
 				catch (Exception e)
 				{
 					global::Android.Util.Log.Error(Tag, $"OpenRA crashed: {e}");
-					RunOnUiThread(() => Toast.MakeText(this, $"OpenRA crashed: {e.Message}", ToastLength.Long)?.Show());
+
+					// Write full crash to sdcard so it can be read from Termux without ADB.
+					try
+					{
+						var crashText = $"[{System.DateTime.Now}]\nType: {e.GetType().FullName}\nMessage: {e.Message}\n\nInnerException: {e.InnerException}\n\nStackTrace:\n{e.StackTrace}";
+						System.IO.File.WriteAllText("/sdcard/openra_crash.txt", crashText);
+					}
+					catch { }
+
+					RunOnUiThread(() => Toast.MakeText(this, $"OpenRA crashed: {e.GetType().Name}: {e.Message}", ToastLength.Long)?.Show());
 				}
 			})
 			{ Name = "OpenRA Main", IsBackground = false }.Start();
