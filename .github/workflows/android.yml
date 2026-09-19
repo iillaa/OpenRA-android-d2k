@@ -103,7 +103,7 @@ jobs:
 
       - name: Build APK
         run: |
-          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug
+          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug -p:BuildForAndroid=true
 
       - name: Find APK
         id: apk
@@ -122,6 +122,21 @@ jobs:
           fi
           echo "apk=$APK"
           echo "apk=$APK" >> $GITHUB_OUTPUT
+
+      - name: Verify native libraries in APK
+        if: steps.apk.outputs.apk != ''
+        run: |
+          APK="${{ steps.apk.outputs.apk }}"
+          echo "=== Native libraries in $APK ==="
+          unzip -l "$APK" | grep -E "\.so$" || echo "WARNING: No native libraries found in APK!"
+          echo "=== Checking for critical libraries ==="
+          for lib in libfreetype6.so liblua51.so libsoft_oal.so; do
+            if unzip -l "$APK" | grep -q "$lib"; then
+              echo "  OK: $lib found"
+            else
+              echo "  MISSING: $lib NOT found in APK!"
+            fi
+          done
 
       - name: Upload APK
         if: steps.apk.outputs.apk != ''
