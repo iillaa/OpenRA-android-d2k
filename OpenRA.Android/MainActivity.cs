@@ -81,14 +81,14 @@ namespace OpenRA.Android
 			var config = Resources.Configuration;
 
 			// 600dp smallest-width is the standard tablet breakpoint (API 21+, min SDK is 24).
-			var isTablet = config.SmallestWidthDp >= 600;
+			var isTablet = config.SmallestWidthDips >= 600;
 
 			if (!isTablet || metrics.DensityDpi <= 0)
 				return 1f;
 
 			// DensityDpi / 160f = scale factor (mdpi=1.0, hdpi=1.5, xhdpi=2.0, xxhdpi=3.0).
 			// Clamp to 1.5–2.5 so phones stay at 1.0 and tablets get a touch-friendly scale.
-			var scale = metrics.DensityDpi / 160f;
+			var scale = (float)metrics.DensityDpi / 160f;
 			return Math.Clamp(scale, 1.5f, 2.5f);
 		}
 
@@ -256,7 +256,7 @@ namespace OpenRA.Android
 				{
 					// Request pointer capture (API 26+) so edge-panning isn't intercepted by
 					// Android's system gesture bars.
-					if (Android.OS.Build.VERSION.SdkInt >= 26)
+					if (global::Android.OS.Build.VERSION.SdkInt >= 26)
 						RequestPointerCapture();
 
 					window.EnqueueMouseMotion(e);
