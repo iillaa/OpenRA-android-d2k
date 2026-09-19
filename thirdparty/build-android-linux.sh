@@ -85,7 +85,6 @@ echo "[ok] libfreetype6.so"
 # ---------------------------------------------------------------------------
 OPENAL_SRC="$TP/openal-soft"
 if [ ! -d "$OPENAL_SRC" ]; then
-	curl -fsSL https://github.com/emscripten-core/emscripten/raw/3.1.48/cache/local/clang/libwebaudio.a -o /dev/null 2>&1 || true
 	curl -fsSL https://github.com/kcat/openal-soft/archive/refs/tags/1.23.1.tar.gz -o /tmp/openal.tgz
 	mkdir -p "$OPENAL_SRC"
 	tar xzf /tmp/openal.tgz -C "$OPENAL_SRC" --strip-components=1
