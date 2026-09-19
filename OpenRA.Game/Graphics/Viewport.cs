@@ -111,7 +111,7 @@ namespace OpenRA.Graphics
 			var newCenter = worldRenderer.Viewport.ViewToWorldPx(center);
 
 			var candidateCenterLocation = CenterLocation + oldCenter - newCenter;
-			CenterLocation = candidateCenterLocation.Clamp(mapBounds);
+			CenterLocation = candidateCenterLocation.Clamp(GetEffectiveScrollBounds());
 		}
 
 		public void ToggleZoom()
@@ -133,16 +133,60 @@ namespace OpenRA.Graphics
 		public static long LastMoveRunTime = 0;
 		public static int2 LastMousePos;
 
+		public Rectangle GetEffectiveScrollBounds()
+		{
+			if (worldRenderer.World.Type == WorldType.Editor)
+				return mapBounds;
+
+			// Prevent the camera from scrolling half a screen into the black void outside the map.
+			// Top, bottom, and left sides use a tight 12% margin so the desert map fills ~88% of the display.
+			// The right side requires a wider margin (~35% of viewport width) so that the right sidebar
+			// (radar and production palette, which covers the right ~25-30% of the screen) does not
+			// obscure or hide units and buildings situated along the eastern edge of the map.
+			var marginLeft = (int)(ViewportSize.Width * 0.12f);
+			var marginRight = (int)(ViewportSize.Width * 0.35f);
+			var marginTop = (int)(ViewportSize.Height * 0.12f);
+			var marginBottom = (int)(ViewportSize.Height * 0.12f);
+
+			var halfW = ViewportSize.Width / 2;
+			var halfH = ViewportSize.Height / 2;
+
+			int minX, maxX;
+			if (mapBounds.Width <= ViewportSize.Width)
+				minX = maxX = (mapBounds.Left + mapBounds.Right) / 2;
+			else
+			{
+				minX = mapBounds.Left + halfW - marginLeft;
+				maxX = mapBounds.Right - halfW + marginRight;
+				if (minX > maxX)
+					minX = maxX = (mapBounds.Left + mapBounds.Right) / 2;
+			}
+
+			int minY, maxY;
+			if (mapBounds.Height <= ViewportSize.Height)
+				minY = maxY = (mapBounds.Top + mapBounds.Bottom) / 2;
+			else
+			{
+				minY = mapBounds.Top + halfH - marginTop;
+				maxY = mapBounds.Bottom - halfH + marginBottom;
+				if (minY > maxY)
+					minY = maxY = (mapBounds.Top + mapBounds.Bottom) / 2;
+			}
+
+			return Rectangle.FromLTRB(minX, minY, maxX, maxY);
+		}
+
 		public ScrollDirection GetBlockedDirections()
 		{
+			var bounds = GetEffectiveScrollBounds();
 			var ret = ScrollDirection.None;
-			if (CenterLocation.Y <= mapBounds.Top)
+			if (CenterLocation.Y <= bounds.Top)
 				ret |= ScrollDirection.Up;
-			if (CenterLocation.X <= mapBounds.Left)
+			if (CenterLocation.X <= bounds.Left)
 				ret |= ScrollDirection.Left;
-			if (CenterLocation.Y >= mapBounds.Bottom)
+			if (CenterLocation.Y >= bounds.Bottom)
 				ret |= ScrollDirection.Down;
-			if (CenterLocation.X >= mapBounds.Right)
+			if (CenterLocation.X >= bounds.Right)
 				ret |= ScrollDirection.Right;
 
 			return ret;
@@ -343,14 +387,14 @@ namespace OpenRA.Graphics
 
 		public void Center(WPos pos)
 		{
-			CenterLocation = worldRenderer.ScreenPxPosition(pos).Clamp(mapBounds);
+			CenterLocation = worldRenderer.ScreenPxPosition(pos).Clamp(GetEffectiveScrollBounds());
 			cellsDirty = true;
 			allCellsDirty = true;
 		}
 
 		public void Center(float2 pos)
 		{
-			CenterLocation = worldRenderer.ScreenPosition(pos).Clamp(mapBounds);
+			CenterLocation = worldRenderer.ScreenPosition(pos).Clamp(GetEffectiveScrollBounds());
 			cellsDirty = true;
 			allCellsDirty = true;
 		}
@@ -363,7 +407,7 @@ namespace OpenRA.Graphics
 			allCellsDirty = true;
 
 			if (!ignoreBorders)
-				CenterLocation = CenterLocation.Clamp(mapBounds);
+				CenterLocation = CenterLocation.Clamp(GetEffectiveScrollBounds());
 		}
 
 		// Rectangle (in viewport coords) that contains things to be drawn

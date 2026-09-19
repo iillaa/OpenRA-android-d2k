@@ -28,22 +28,22 @@ Container@PLAYER_WIDGETS:
 		Image@COMMAND_BAR_BACKGROUND:
 			X: 0
 			Y: WINDOW_HEIGHT - HEIGHT
-			Width: 451
-			Height: 43
+			Width: 812
+			Height: 77
 			ImageCollection: commandbar
 			ImageName: background
 			ClickThrough: False
 		Container@COMMAND_BAR:
 			Logic: CommandBarLogic
-			X: 24
-			Y: WINDOW_HEIGHT - HEIGHT - 9
-			Width: 275
-			Height: 41
+			X: 43
+			Y: WINDOW_HEIGHT - HEIGHT - 16
+			Width: 504
+			Height: 74
 			Children:
 				LogicKeyListener@MODIFIER_OVERRIDES:
 				Button@ATTACK_MOVE:
-					Width: 34
-					Height: 41
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					Key: AttackMove
@@ -54,15 +54,17 @@ Container@PLAYER_WIDGETS:
 					TooltipTemplate: BUTTON_WITH_DESC_HIGHLIGHT_TOOLTIP
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: attack-move
 							IgnoreMouseOver: true
 				Button@FORCE_MOVE:
-					X: 35
-					Width: 34
-					Height: 41
+					X: 63
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					DisableKeySound: true
@@ -72,15 +74,17 @@ Container@PLAYER_WIDGETS:
 					TooltipTemplate: BUTTON_WITH_DESC_HIGHLIGHT_TOOLTIP
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: force-move
 							IgnoreMouseOver: true
 				Button@FORCE_ATTACK:
-					X: 70
-					Width: 34
-					Height: 41
+					X: 126
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					DisableKeySound: true
@@ -90,15 +94,17 @@ Container@PLAYER_WIDGETS:
 					TooltipTemplate: BUTTON_WITH_DESC_HIGHLIGHT_TOOLTIP
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: force-attack
 							IgnoreMouseOver: true
 				Button@GUARD:
-					X: 105
-					Width: 34
-					Height: 41
+					X: 189
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					Key: Guard
@@ -108,15 +114,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: guard
 							IgnoreMouseOver: true
 				Button@DEPLOY:
-					X: 140
-					Width: 34
-					Height: 41
+					X: 252
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					Key: Deploy
@@ -127,15 +135,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: deploy
 							IgnoreMouseOver: true
 				Button@SCATTER:
-					X: 175
-					Width: 34
-					Height: 41
+					X: 315
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					Key: Scatter
@@ -146,15 +156,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: scatter
 							IgnoreMouseOver: true
 				Button@STOP:
-					X: 210
-					Width: 34
-					Height: 41
+					X: 378
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					Key: Stop
@@ -165,15 +177,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: stop
 							IgnoreMouseOver: true
 				Button@QUEUE_ORDERS:
-					X: 245
-					Width: 34
-					Height: 41
+					X: 441
+					Width: 61
+					Height: 74
 					VisualHeight: 0
 					Background: command-button
 					DisableKeySound: true
@@ -183,21 +197,23 @@ Container@PLAYER_WIDGETS:
 					TooltipTemplate: BUTTON_WITH_DESC_HIGHLIGHT_TOOLTIP
 					Children:
 						Image@ICON:
-							X: 4
-							Y: 8
+							X: 8
+							Y: 14
+							Width: 46
+							Height: 46
 							ImageCollection: command-icons
 							ImageName: queue-orders
 							IgnoreMouseOver: true
 		Container@STANCE_BAR:
 			Logic: StanceSelectorLogic
-			X: 316
-			Y: WINDOW_HEIGHT - HEIGHT - 11
-			Width: 138
-			Height: 26
+			X: 569
+			Y: WINDOW_HEIGHT - HEIGHT - 20
+			Width: 248
+			Height: 47
 			Children:
 				Button@STANCE_ATTACKANYTHING:
-					Width: 29
-					Height: 26
+					Width: 52
+					Height: 47
 					VisualHeight: 0
 					Background:
 					Key: StanceAttackAnything
@@ -208,15 +224,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 6
-							Y: 5
+							X: 11
+							Y: 9
+							Width: 29
+							Height: 29
 							ImageCollection: stance-icons
 							ImageName: attack-anything
 							IgnoreMouseOver: true
 				Button@STANCE_DEFEND:
-					X: 29
-					Width: 29
-					Height: 26
+					X: 52
+					Width: 52
+					Height: 47
 					VisualHeight: 0
 					Background:
 					Key: StanceDefend
@@ -227,15 +245,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 6
-							Y: 5
+							X: 11
+							Y: 9
+							Width: 29
+							Height: 29
 							ImageCollection: stance-icons
 							ImageName: defend
 							IgnoreMouseOver: true
 				Button@STANCE_RETURNFIRE:
-					X: 58
-					Width: 29
-					Height: 26
+					X: 104
+					Width: 52
+					Height: 47
 					VisualHeight: 0
 					Background:
 					Key: StanceReturnFire
@@ -246,15 +266,17 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 6
-							Y: 5
+							X: 11
+							Y: 9
+							Width: 29
+							Height: 29
 							ImageCollection: stance-icons
 							ImageName: return-fire
 							IgnoreMouseOver: true
 				Button@STANCE_HOLDFIRE:
-					X: 87
-					Width: 29
-					Height: 26
+					X: 156
+					Width: 52
+					Height: 47
 					VisualHeight: 0
 					Background:
 					Key: StanceHoldFire
@@ -265,8 +287,10 @@ Container@PLAYER_WIDGETS:
 					TooltipContainer: TOOLTIP_CONTAINER
 					Children:
 						Image@ICON:
-							X: 6
-							Y: 5
+							X: 11
+							Y: 9
+							Width: 29
+							Height: 29
 							ImageCollection: stance-icons
 							ImageName: hold-fire
 							IgnoreMouseOver: true

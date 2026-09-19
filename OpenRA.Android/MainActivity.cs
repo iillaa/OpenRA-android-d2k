@@ -25,8 +25,11 @@ using OpenRA.Platforms.Android;
 // into the final AndroidManifest.xml.
 [assembly: UsesPermission(Android.Manifest.Permission.Internet)]
 [assembly: UsesPermission(Android.Manifest.Permission.AccessNetworkState)]
-[assembly: UsesPermission(Android.Manifest.Permission.ReadExternalStorage, MaxSdkVersion = 32)]
-[assembly: UsesPermission(Android.Manifest.Permission.WriteExternalStorage, MaxSdkVersion = 32)]
+[assembly: UsesPermission(Android.Manifest.Permission.ReadExternalStorage)]
+[assembly: UsesPermission(Android.Manifest.Permission.WriteExternalStorage)]
+[assembly: UsesPermission(Android.Manifest.Permission.ManageExternalStorage)]
+[assembly: UsesPermission("android.permission.READ_MEDIA_AUDIO")]
+[assembly: UsesPermission("android.permission.READ_MEDIA_VIDEO")]
 
 namespace OpenRA.Android
 {
@@ -59,7 +62,8 @@ namespace OpenRA.Android
 			supportDir = Path.Combine(GetExternalFilesDir(null).AbsolutePath, "Support") + Path.DirectorySeparatorChar;
 			Directory.CreateDirectory(supportDir);
 
-			// Automatically import custom music (.aud) and movies (.vqa) from Download/d2k if present
+			// Request storage permission if needed, then check for Download/d2k content
+			CheckAndRequestStoragePermissions();
 			SyncCustomContentFromDownloads(supportDir);
 
 			// Wire platform logs → in-app DevConsole first so all initialization logs are captured
@@ -95,6 +99,46 @@ namespace OpenRA.Android
 			StartEngineOnce();
 		}
 
+		void CheckAndRequestStoragePermissions()
+		{
+			try
+			{
+				if (Build.VERSION.SdkInt >= BuildVersionCodes.R)
+				{
+					if (!global::Android.OS.Environment.IsExternalStorageManager)
+					{
+						DevConsole.Info("Permission", "Storage access not granted. Launching Manage App All Files Access settings...");
+						try
+						{
+							var uri = global::Android.Net.Uri.FromParts("package", PackageName, null);
+							var intent = new global::Android.Content.Intent(global::Android.Provider.Settings.ActionManageAppAllFilesAccessPermission, uri);
+							StartActivity(intent);
+						}
+						catch
+						{
+							var intent = new global::Android.Content.Intent(global::Android.Provider.Settings.ActionManageAllFilesAccessPermission);
+							StartActivity(intent);
+						}
+					}
+				}
+				else if (Build.VERSION.SdkInt >= BuildVersionCodes.M)
+				{
+					if (CheckSelfPermission(global::Android.Manifest.Permission.ReadExternalStorage) != Permission.Granted)
+					{
+						RequestPermissions(new[]
+						{
+							global::Android.Manifest.Permission.ReadExternalStorage,
+							global::Android.Manifest.Permission.WriteExternalStorage
+						}, 1001);
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				DevConsole.Warn("Permission", $"Could not request storage permission: {ex.Message}");
+			}
+		}
+
 		void SyncCustomContentFromDownloads(string targetSupportDir)
 		{
 			try
@@ -125,6 +169,7 @@ namespace OpenRA.Android
 
 				var destMusic = Path.Combine(targetSupportDir, "Content", "d2k", "v3", "Music");
 				var destMovies = Path.Combine(targetSupportDir, "Content", "d2k", "v3", "Movies");
+				var destMaps = Path.Combine(targetSupportDir, "maps", "d2k", "{DEV_VERSION}");
 				int importedCount = 0;
 
 				void ImportFilesFrom(string sourceDir)
@@ -157,6 +202,17 @@ namespace OpenRA.Android
 								DevConsole.Info("Content", $"Imported movie cutscene: {name}");
 							}
 						}
+						else if (name.EndsWith(".oramap", StringComparison.OrdinalIgnoreCase))
+						{
+							Directory.CreateDirectory(destMaps);
+							var target = Path.Combine(destMaps, name);
+							if (!File.Exists(target) || new FileInfo(file).Length != new FileInfo(target).Length)
+							{
+								File.Copy(file, target, true);
+								importedCount++;
+								DevConsole.Info("Content", $"Imported custom map: {name}");
+							}
+						}
 					}
 				}
 
@@ -171,12 +227,16 @@ namespace OpenRA.Android
 				ImportFilesFrom(Path.Combine(d2kDir, "Movies"));
 				ImportFilesFrom(Path.Combine(d2kDir, "movies"));
 
+				// 4. Check Maps subfolder
+				ImportFilesFrom(Path.Combine(d2kDir, "Maps"));
+				ImportFilesFrom(Path.Combine(d2kDir, "maps"));
+
 				if (importedCount > 0)
 				{
 					DevConsole.Info("Content", $"Successfully imported {importedCount} files from {d2kDir}");
 					RunOnUiThread(() =>
 					{
-						Toast.MakeText(this, $"Imported {importedCount} Dune 2000 music/movie files!", ToastLength.Long)?.Show();
+						Toast.MakeText(this, $"Imported {importedCount} Dune 2000 files (music/movies/maps)!", ToastLength.Long)?.Show();
 					});
 				}
 			}
@@ -186,27 +246,9 @@ namespace OpenRA.Android
 			}
 		}
 
-		// Compute a tablet-aware default UI scale for the first launch. On high-DPI tablets the
-		// default 1.0 scale makes sidebars, radar and buttons tiny and hard to tap. We derive the
-		// scale from the screen density and only apply it when no settings.yaml exists yet (so the
-		// user's own preference always wins on subsequent runs).
 		float ComputeDefaultUIScale()
 		{
-			var metrics = Resources.DisplayMetrics;
-
-			if (metrics.DensityDpi <= 0)
-				return 1f;
-
-			var density = (float)metrics.DensityDpi / 160f;
-			var widthDp = metrics.WidthPixels / density;
-			var heightDp = metrics.HeightPixels / density;
-			var isTablet = Math.Min(widthDp, heightDp) >= 600;
-
-			if (!isTablet)
-				return 1f;
-
-			// Clamp to 1.5–2.5 so phones stay at 1.0 and tablets get a touch-friendly scale.
-			return Math.Clamp(density, 1.5f, 2.5f);
+			return 1f;
 		}
 
 		// Pause rendering and signal the engine when the app is backgrounded so it stops
@@ -217,11 +259,13 @@ namespace OpenRA.Android
 			window?.SuspendRendering();
 		}
 
-		// Resume rendering when the app returns to the foreground.
+		// Resume rendering when the app returns to the foreground, and sync any newly downloaded content.
 		protected override void OnResume()
 		{
 			base.OnResume();
 			window?.ResumeRendering();
+			if (!string.IsNullOrEmpty(supportDir))
+				SyncCustomContentFromDownloads(supportDir);
 		}
 
 		// Called from the SurfaceCallback once the first stable surface is available.
@@ -231,8 +275,6 @@ namespace OpenRA.Android
 				return;
 			engineStarted = true;
 
-			// On first launch (no settings.yaml yet) inject a tablet-aware UI scale so the UI
-			// isn't tiny on high-DPI screens. On later runs the user's saved preference wins.
 			var settingsPath = Path.Combine(supportDir, "settings.yaml");
 			var argsList = new List<string>
 			{

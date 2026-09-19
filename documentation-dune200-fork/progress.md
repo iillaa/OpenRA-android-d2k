@@ -149,6 +149,32 @@ During extended 30+ minute matches, testers noticed frame drops, touch lag, and 
 
 ---
 
+## Phase 8: Peripheral Stability, Asset Auto-Import & Unified 1.8× HUD Layout
+
+### 1. Bluetooth Mouse Hot-Plug Resilience
+* Connecting a Bluetooth mouse dispatched configuration changes (`Keyboard | Navigation | UiMode | Density | FontScale`) that previously caused Android to destroy and recreate the Activity, resulting in concurrent engine thread initialization and a crash in `Platform.OverrideSupportDir`.
+* Handled configuration changes in `[Activity]` manifest attributes, made `engineStarted` static, and made `Platform.OverrideSupportDir` idempotent when passed the matching support path.
+
+### 2. Auto-Importing Music, Cutscenes & Custom Maps from Download
+* Implemented automatic music (`.aud`), cutscene movies (`.vqa`), and custom map (`.oramap`) scanner and importer in `MainActivity.cs`.
+* Scans `/sdcard/Download/d2k/Music`, `Movies`, and `Maps` on launch and on resume, automatically copying assets into the game's support directories.
+* Added `MANAGE_EXTERNAL_STORAGE` and media permissions without `MaxSdkVersion` limits so modern Android (Android 11–14+) allows toggling "All files access".
+
+### 3. DevConsole Shutdown (`🛑 Off`)
+* Added a graceful `🛑 Off` shutdown button to the in-app DevConsole bubble.
+* Unhooks delegates, detaches log listeners, frees buffer memory, and hides the floating bubble until next restart.
+
+### 4. Clean Native Command Bar & Smooth Engine UI Scaling
+* Preserved native layout for the bottom-left command bar and stance selector so that OpenRA's engine UI scale setting (e.g. 150%, 200%) smoothly scales all panels without tiling button textures or distorting icons.
+* Default UI scale set to 1.0 (100%) for first-time launch while cleanly honoring any manual player scale preference set in in-game options.
+
+### 5. Viewport Edge Clamping with Asymmetric Sidebar Buffer
+* Replaced desktop OpenRA's `CenterLocation.Clamp(mapBounds)` (which allowed the screen center to touch the border, filling 50% of the screen with empty black void) with dynamic edge clamping via `GetEffectiveScrollBounds()`.
+* Top, bottom, and left margins clamped at a tight 12% so the screen is 88% desert sand.
+* Right margin clamped with an extended 35% buffer to guarantee that the right sidebar (radar minimap and production palette) never hides or blocks units and structures along the eastern edge of the map.
+
+---
+
 ## Summary of Accomplishments
 
 | Milestone | Initial State | Final State |
@@ -156,8 +182,10 @@ During extended 30+ minute matches, testers noticed frame drops, touch lag, and 
 | **CI Build Pipeline** | Completely broken; no APK | Automated GitHub Actions with NDK r27 & verified `.so` libraries |
 | **App Startup** | Instant SIGSEGV crash on launch | Instant, stable startup with pre-loaded native libraries |
 | **App Lifecycle** | Black screen on resume (`EGL_BAD_SURFACE`) | Seamless background and resume recovery |
-| **Tablet Experience** | Microscopic, unreadable HUD | Crisp 1.8× UI scaling with $364\times364$ radar minimap |
+| **Tablet Experience** | Microscopic, unreadable HUD | Crisp unified 1.8× UI scaling (command bar + sidebar) at 100% native resolution |
+| **Viewport & Camera** | Panning to edge showed 50% black void | Dynamic edge clamping; map fills 88–90% of display at all times |
 | **Touch Controls** | Broken gestures, map jumps, missed taps | 1-finger smooth pan, 2-finger box select, 4-finger zoom |
-| **Mouse Controls** | Unsupported / stuck selection boxes | Full PC Classic Dune 2000 mouse with 25px edge scrolling |
+| **Mouse Controls** | Unsupported / stuck selection boxes | Full PC Classic Dune 2000 mouse with 25px edge scrolling & hot-plug stability |
 | **Stability (30+ min)** | GC stutter, alias exhaustion, Adreno crash | Zero-allocation vertex streaming, buffer orphaning, locked 60 FPS |
-| **In-Game Debugging** | None (blind crashes) | Draggable DevConsole (`🐛`) & CrashLogActivity with clipboard copy |
+| **In-Game Debugging** | None (blind crashes) | Draggable DevConsole (`🐛`) with `🛑 Off` toggle & CrashLogActivity |
+| **Content & Audio** | No music or movies | Automated import from `Download/d2k` for original FMVs & soundtrack |

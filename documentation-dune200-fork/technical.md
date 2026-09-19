@@ -120,8 +120,55 @@ On a 12.7" 2560×1600 tablet display, rendering the UI at standard scale makes p
 
 * **Split Scaling Architecture**:
   * Battlefield map renders at **100% native 2560×1600 resolution** for pixel-sharp terrain and unit sprites.
-  * Interactive panels (sidebar, production palette, and radar) are scaled up by **1.8×** in `mods/d2k/chrome/ingame-player.yaml`.
+  * Interactive panels (sidebar, production palette, radar, command bar, and stance selector) are uniformly scaled up by **1.8×** in `mods/d2k/chrome/ingame-player.yaml`.
 * **Dynamic Grid Recalculation**:
   * `ProductionPaletteWidget.cs` scales `IconSize` ($104\times86$) and `IconMargin` ($4\times0$).
   * `SupportPowersWidget.cs` scales support power icons ($108\times86$).
-  * `RadarWidget.cs` renders at $364\times364$ pixels with full touch camera navigation.
+  * `COMMAND_BAR_BACKGROUND` ($812\times77$), `COMMAND_BAR` ($480\times70$, buttons $58\times70$, icons $44\times44$), and `STANCE_BAR` ($220\times44$) are scaled $1.8\times$ with `IgnoreMouseOver: true` for hover tooltips.
+  * `RadarWidget.cs` renders at $364\times364$ pixels with full touch and mouse navigation.
+* **Standardized 100% UI Scale Default**:
+  * `MainActivity.ComputeDefaultUIScale()` returns `1.0f` (100%), avoiding double-scaling while automatically migrating any legacy `UIScale: 2.x` settings.
+
+---
+
+## 7. Viewport Edge Clamping & Scroll Bounds
+
+In desktop OpenRA, `CenterLocation` is clamped directly to `mapBounds`. Because the *center* of the screen can reach the map boundary, exactly **50% of the screen** hangs over into the empty black void when scrolling to any border.
+
+In [`Viewport.cs`](file:///data/data/com.termux/files/home/chat/dune/OpenRA.Game/Graphics/Viewport.cs), `GetEffectiveScrollBounds()` dynamically computes scroll limits based on current viewport dimensions and asymmetric HUD layout:
+* **Asymmetric Margins**:
+  * **Top, Bottom, and Left Margins ($12\%$)**: Keeps the desert battlefield filling $\ge 88\%$ of the screen without unnecessary black void.
+  * **Right Margin ($35\%$)**: Accommodates the right sidebar (radar minimap and production palette, which covers the rightmost $25\%–30\%$ of the screen). This ensures troops, structures, and spice fields on the eastern edge of the map never get obscured or trapped underneath the sidebar.
+* **Result**: Complete visibility of all map edges while keeping void borders minimal. Small maps automatically center without wandering into the void.
+
+---
+
+## 8. Bluetooth Mouse Hot-Plug & Android Activity Lifecycle
+
+Connecting or disconnecting a Bluetooth mouse dispatches Android configuration changes (`Keyboard | Navigation | UiMode | Density | FontScale`).
+
+* **Manifest Configuration**: In [`MainActivity.cs`](file:///data/data/com.termux/files/home/chat/dune/OpenRA.Android/MainActivity.cs), `ConfigurationChanges` was expanded so Android never tears down the Activity on peripheral connection.
+* **Thread Guards**: `engineStarted` is marked `static` to prevent concurrent engine thread spawns.
+* **Idempotent Support Directory**: In [`Platform.cs`](file:///data/data/com.termux/files/home/chat/dune/OpenRA.Game/Platform.cs), `OverrideSupportDir` was made idempotent if the path matches the active support directory, avoiding `InvalidOperationException` crashes.
+
+---
+
+## 9. Automated Content Importer & Storage Permissions (Android 11–14+)
+
+On modern Android (Android 11–14+), scoped storage prevents apps from reading public storage without proper declarations and grants.
+
+* **Manifest Permissions**: Declares `MANAGE_EXTERNAL_STORAGE`, `ReadExternalStorage`, `WriteExternalStorage`, and media permissions (`READ_MEDIA_AUDIO`, `READ_MEDIA_VIDEO`) without `MaxSdkVersion` restrictions so Android settings never grey out permissions on Android 13/14 tablets.
+* **Auto-Permission Prompt**: On startup, if `!Environment.IsExternalStorageManager` on Android 11+, the app automatically opens the system "All files access" settings screen for Dune 2000.
+* **Automated Asset & Map Scanner**: Runs on `OnCreate` and `OnResume`:
+  * Scans `/sdcard/Download/d2k/Music` for original `.aud` tracks.
+  * Scans `/sdcard/Download/d2k/Movies` for Westwood `.vqa` cutscenes.
+  * Scans `/sdcard/Download/d2k/Maps` for custom `.oramap` community maps.
+  * Automatically copies missing files into the game's internal support directory, with instant Toast and DevConsole notifications.
+
+---
+
+## 10. In-App Diagnostics & DevConsole Shutdown
+
+The in-game floating diagnostic console (`🐛`) provides direct inspection of engine events on device:
+* **Zero Overhead Shutdown (`🛑 Off`)**: Disconnects event delegates, unhooks log listeners, frees buffer memory, and hides the floating bubble until next restart.
+* **Auto-Expand on Crash**: Automatically expands full-screen on unhandled exceptions for instant triage.

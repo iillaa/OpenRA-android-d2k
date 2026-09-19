@@ -19,6 +19,7 @@ using Android.OS;
 using Android.Text;
 using Android.Views;
 using Android.Widget;
+using OpenRA.Platforms.Android;
 
 namespace OpenRA.Android
 {

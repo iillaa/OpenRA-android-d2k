@@ -1,18 +1,18 @@
-# OpenRA on Android
+# OpenRA: Dune 2000 on Android
 
-![OpenRA main menu running natively on Android](screenshots/openra-android-mainmenu.png)
-
-Native Android port of OpenRA, built with .NET 9 (`net9.0-android`) and raw EGL/GLES — no SDL2, no emulation layer.
+Native Android port of OpenRA: Dune 2000 (`d2k`), built with .NET 9 (`net9.0-android`) and raw EGL/GLES 3.2 — no SDL2, no emulation layer.
 
 ## Status
 
-- ✅ Engine + all mods compile and run natively on `arm64-v8a`
-- ✅ OpenGL ES 3.2 rendering via EGL (Adreno/Mali tested)
-- ✅ Touch input: tap (left-click), double-tap, long-press (right-click), two-finger pan, pinch-to-zoom
-- ✅ Soft keyboard for text fields (player name, etc.)
-- ✅ Audio via OpenAL-Soft (OpenSL ES backend)
+- ✅ Dune 2000 engine + campaign + skirmish run natively on `arm64-v8a`
+- ✅ OpenGL ES 3.2 rendering via raw EGL (Adreno / Mali tested with 60 FPS locked)
+- ✅ Modern touch input: 1-finger smooth pan (zero jump), 1-finger tap/select/order, 2-finger box select, 4-finger zoom
+- ✅ Full PC Bluetooth / USB mouse: Classic controls, 25px edge scrolling, scroll wheel zoom, hot-plug resilience
+- ✅ Unified 1.8× HUD scaling (sidebar, radar 364×364, command bar, stance bar) at 100% native resolution
+- ✅ Viewport edge clamping: eliminates the legacy 50% black void, keeping the map filling 88–90% of the screen
+- ✅ Audio via OpenAL-Soft (OpenSL ES backend) + auto-import for Music (`.aud`) & Cutscene Movies (`.vqa`) from `Download/d2k`
+- ✅ In-app diagnostics: draggable DevConsole (`🐛`) with `🛑 Off` shutdown button & CrashLogActivity
 - ✅ Freeware game content auto-download from openra.net mirrors
-- ✅ Red Alert main menu + shellmap rendering with live animation
 
 ## Architecture
 
@@ -20,81 +20,75 @@ Native Android port of OpenRA, built with .NET 9 (`net9.0-android`) and raw EGL/
 OpenRA.Android (net9.0-android, the APK app)
  ├─ OpenRA.Game              (multi-targets net8.0;net9.0-android)
  ├─ OpenRA.Mods.Common/Cnc/D2k (multi-target, compiled-in, no disk loading)
- └─ OpenRA.Platforms.Android (EGL + GLES + touch + OpenAL audio)
+ └─ OpenRA.Platforms.Android (EGL + GLES + touch/mouse + OpenAL audio)
 ```
 
 The Android platform layer (`OpenRA.Platforms.Android`) implements OpenRA's `IPlatform`/`IPlatformWindow`/`IGraphicsContext` interfaces using:
 - **EGL** via P/Invoke to `libEGL.so` (context, surface, swap)
 - **GLES 3** function-pointer loader (reuses the engine's `OpenGL.cs` with `eglGetProcAddress`)
-- **SurfaceView** + `ISurfaceHolderCallback` for the window surface
-- **MotionEvent** translation for multi-touch input
+- **SurfaceView** + `ISurfaceHolderCallback` for the window surface with zero-black-screen resume
+- **MotionEvent** translation for multi-touch and Bluetooth mouse input
 - **OpenAL-Soft** for audio (`libsoft_oal.so`, OpenSL ES backend)
 - **FreeType** for font rendering (`libfreetype6.so`)
 
 ## Build prerequisites
 
 - .NET 9 SDK + `dotnet workload install android`
-- Android SDK (API 34+), NDK r27
+- Android SDK (API 34+), NDK r26d/r27
 - JDK 17
-- CMake (Android SDK CMake 3.22.1 works)
+- CMake 3.22+
 
 ## Building the native libraries
 
-The three native dependencies (FreeType, Lua, OpenAL-Soft) don't ship Android binaries, so they're built from source with the NDK:
+The three native dependencies (FreeType, Lua, OpenAL-Soft) are cross-compiled with the NDK for `arm64-v8a` with 16KB page-size alignment:
 
 ```bash
-# All scripts are in thirdparty/. They download source, cross-compile for arm64-v8a,
-# and output 16KB-page-aligned .so files to the app's jniLibs dir.
-export PATH="$HOME/Library/Android/sdk/cmake/3.22.1/bin:$PATH"
-export ANDROID_NDK_ROOT="$HOME/Library/Android/sdk/ndk/27.1.12297006"
-
-./thirdparty/build-freetype-android.sh   # → libfreetype6.so
-./thirdparty/build-lua-android.sh        # → liblua51.so
-./thirdparty/build-openal-android.sh     # → libsoft_oal.so
+# Unified Linux / CI script in thirdparty/
+bash thirdparty/build-android-linux.sh "$ANDROID_NDK_ROOT"
 ```
 
 ## Building and deploying the APK
 
 ```bash
-export DOTNET_ROOT="$HOME/.dotnet"
-export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
-export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
-export ANDROID_NDK_ROOT="$HOME/Library/Android/sdk/ndk/27.1.12297006"
-
-# Build, align, sign, install, and launch on a connected device
-./thirdparty/deploy-android.sh
-```
-
-Or manually:
-```bash
-dotnet build OpenRA.Android/OpenRA.Android.csproj -c Release -f net9.0-android -p:BuildForAndroid=true
+# Build Release APK with Native AOT
+dotnet build OpenRA.Android/OpenRA.Android.csproj -c Release -p:BuildForAndroid=true
 
 # Sign with debug keystore
-APK=OpenRA.Android/obj/Release/android/bin/net.openra.android.apk
+APK=OpenRA.Android/bin/Release/net9.0-android/net.openra.mod.d2k.apk
 zipalign -f -p 4 "$APK" "${APK%.apk}-aligned.apk"
 apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android \
   --out "${APK%.apk}-Signed.apk" "${APK%.apk}-aligned.apk"
 
 adb install -r "${APK%.apk}-Signed.apk"
-adb shell am start -n net.openra.android/$(adb shell dumpsys package net.openra.android | grep -oE 'crc[0-9a-f]+\.MainActivity' | head -1)
+adb shell am start -n net.openra.mod.d2k/net.openra.android.MainActivity
 ```
 
-## Touch controls
+## Controls & Input
 
+### Touchscreen Gestures
 | Gesture | Action |
 |---|---|
-| Tap | Left click |
-| Double-tap | Double-click |
-| Long-press (>500ms) | Right-click |
-| Drag | Move / scroll map / drag-select |
-| Two-finger drag | Pan map |
-| Pinch | Zoom in/out |
+| **1-Finger Tap** | Select unit / Click UI buttons & production tabs / Issue orders in Classic mode |
+| **1-Finger Drag** | Smooth map pan (seeded drag origin, 25px touch slop, zero jump) |
+| **2-Finger Frame** | Unit box selection (draws green box between fingers, lingering touch shield) |
+| **4-Finger Pinch** | Zoom in / Zoom out |
+
+### Bluetooth / USB Mouse
+| Mouse Action | In-Game Function |
+|---|---|
+| **Left Click** | Select unit / Click UI buttons & production tabs |
+| **Left Click + Drag** | Draw green unit selection box |
+| **Right Click** | Issue Move, Attack, or Harvest orders / Cancel |
+| **Scroll Wheel** | Smooth zoom in / out |
+| **Edge Hover (25px)** | Smooth edge scrolling across the battlefield |
 
 ## Engine modifications
 
 Changes to the core engine are minimal and guarded by `OperatingSystem.IsAndroid()`:
 - `ObjectCreator.cs` — resolves mod assemblies from the default load context (compiled-in)
 - `Game.cs` — instantiates `AndroidPlatform` directly; skips LOH compaction (unsupported on Mono)
+- `Settings.cs` — defaults to `Classic` mouse, `Standard` scroll, `ViewportEdgeScroll = true`, margin 25 on Android
+- `Viewport.cs` — dynamic `GetEffectiveScrollBounds()` preventing camera from scrolling into half-screen black void
 - `PlatformInterfaces.cs` — added `StartTextInput()`/`StopTextInput()` for soft keyboard
 - `Widget.cs` — calls `StartTextInput`/`StopTextInput` on focus gain/loss
 - `*.csproj` — multi-target `net8.0;net9.0-android` via `BuildForAndroid` property

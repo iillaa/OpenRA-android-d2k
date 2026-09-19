@@ -172,8 +172,15 @@ namespace OpenRA.Mods.Common.Widgets
 
 			// Center
 			if (sprites[4] != null)
-				FillRectWithSprite(new Rectangle(bounds.Left + marginLeft, bounds.Top + marginTop,
-					bounds.Width - marginWidth, bounds.Height - marginHeight), sprites[4]);
+			{
+				var fillWidth = bounds.Width - marginWidth;
+				var fillHeight = bounds.Height - marginHeight;
+				if (marginWidth == 0 && marginHeight == 0 && sprites[0] == null && sprites[2] == null && sprites[6] == null && sprites[8] == null)
+					DrawSprite(sprites[4], new float2(bounds.Left, bounds.Top), new Size(fillWidth, fillHeight));
+				else
+					FillRectWithSprite(new Rectangle(bounds.Left + marginLeft, bounds.Top + marginTop,
+						fillWidth, fillHeight), sprites[4]);
+			}
 
 			// Left edge
 			if (sprites[3] != null)

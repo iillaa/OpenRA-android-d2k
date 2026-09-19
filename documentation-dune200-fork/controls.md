@@ -18,12 +18,13 @@ Both pipelines run concurrently—you can pan the map with your left finger whil
 | **1-Finger Drag / Swipe** | Smooth Map Pan | Dragging across the battlefield scrolls the camera smoothly with 1:1 direct response (starts with zero jump). |
 | **2-Finger Drag / Frame** | Unit Box Selection | Touching down 2 fingers immediately creates a green selection box between them. Drag or expand the fingers across your units and lift to select all troops inside. |
 | **4-Finger Pinch / Spread** | Zoom In / Out | Using two hands (4 fingers), pinch inward to zoom out for a tactical overview, or spread outward to zoom in. |
-| **Radar Tap / Drag** | Camera Jump & Pan | Tapping or dragging anywhere on the enlarged $364\times364$ radar minimap instantly moves the battlefield camera. |
+| **Radar Tap** | Order / Move | In Classic mode with a unit selected, tapping the radar orders the unit to that location. |
 
-### Misclick Prevention & Reliability
+### Misclick Prevention & Viewport Safety
 * **Touch Slop ($25\text{ px}$)**: Small natural finger flatting on high-DPI screens ($>230\text{ PPI}$) will never trigger accidental map panning.
 * **Instant Button Response**: Releasing a finger from a menu item or production button fires instantly on the first tap without dropping clicks.
 * **Lingering Touch Shield**: When lifting fingers from a 2-finger box selection, any trailing finger touching the glass for a split-second is automatically ignored until all fingers lift, preventing accidental move orders.
+* **Viewport Edge Clamping**: The camera is clamped so the desert map always fills **88%–90% of the screen**, eliminating the old issue where panning to the border resulted in 50% of the display being empty black void.
 
 ---
 
@@ -33,15 +34,17 @@ The mouse pipeline connects directly to OpenRA's desktop event loop without touc
 
 | Mouse Action | In-Game Function |
 |---|---|
-| **Left Click** | Select unit / Click UI buttons & production tabs / Issue orders in Modern mode. |
+| **Left Click** | Select unit / Click UI buttons & production tabs / Issue orders on radar when unit selected. |
 | **Left Click + Drag** | Draw green unit box selection around multiple troops. |
 | **Right Click** | Issue Move, Attack, or Harvest orders / Cancel current placement or target in Classic mode. |
+| **Right Click on Radar** | **Instant Camera Jump**: Instantly centers the viewport on that minimap position. |
 | **Middle Click + Drag** | Tiberian Sun / Standard camera drag. |
 | **Scroll Wheel** | Smooth zoom in / zoom out. |
 | **Screen Edge Hover (25px)** | **Edge Scrolling**: Moving the mouse cursor within 25px of any display border smoothly pans the camera across the desert map. |
 
 > [!NOTE]
-> **No Stuck Selection Boxes**: Mouse clicks and hover motions are cleanly tracked with deterministic `Down` and `Up` state machines, eliminating the legacy bug where dragging a mouse left a permanent green box across the screen.
+> * **Hot-Plug Resilience**: Connecting or disconnecting a Bluetooth mouse while in-game does not restart the Activity or crash the engine.
+> * **No Stuck Selection Boxes**: Mouse clicks and hover motions are cleanly tracked with deterministic `Down` and `Up` state machines, eliminating the legacy bug where dragging a mouse left a permanent green box across the screen.
 
 ---
 
