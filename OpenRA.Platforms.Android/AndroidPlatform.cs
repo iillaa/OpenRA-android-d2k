@@ -40,13 +40,26 @@ namespace OpenRA.Platforms.Android
 			PlatformErrorLogger?.Invoke(tag, msg);
 		}
 
-		static AndroidPlatform()
+		static bool nativeLibsInitialized;
+		static IntPtr freetypeHandle = IntPtr.Zero;
+
+		public static void Initialize(global::Android.Content.Context context)
 		{
+			if (nativeLibsInitialized)
+				return;
+			nativeLibsInitialized = true;
+
 			// ── OpenAL (soft_oal) ───────────────────────────────────────────────
-			// .NET Android does not apply the legacy Mono dllmap from OpenAL-CS.dll.config,
-			// so DllImport("soft_oal") fails. Pre-load via Java's loader then register resolver.
-			try { Java.Lang.JavaSystem.LoadLibrary("soft_oal"); }
-			catch { /* already loaded — fine */ }
+			try
+			{
+				PLog("OpenAL", "Pre-loading soft_oal via JavaSystem.LoadLibrary...");
+				Java.Lang.JavaSystem.LoadLibrary("soft_oal");
+				PLog("OpenAL", "soft_oal pre-loaded OK.");
+			}
+			catch (Exception ex)
+			{
+				PLogError("OpenAL", $"JavaSystem.LoadLibrary(soft_oal): {ex.Message}");
+			}
 
 			try
 			{
@@ -54,44 +67,111 @@ namespace OpenRA.Platforms.Android
 				NativeLibrary.SetDllImportResolver(openalAssembly, (libraryName, asm, searchPath) =>
 				{
 					if (libraryName == "soft_oal")
+					{
 						foreach (var name in new[] { "soft_oal", "libsoft_oal.so", "libsoft_oal" })
 							if (NativeLibrary.TryLoad(name, asm, DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.UserDirectories, out var handle))
 								return handle;
+					}
+
 					return IntPtr.Zero;
 				});
-			}
-			catch { }
-
-			// ── FreeType (freetype6) ────────────────────────────────────────────
-			// NativeLibrary.TryLoad with ApplicationDirectory does NOT search the APK native
-			// lib dir on .NET Android. Load via absolute path from ApplicationInfo.NativeLibraryDir.
-			try
-			{
-				var nativeLibDir = global::Android.App.Application.Context.ApplicationInfo.NativeLibraryDir;
-				var freetypePath = System.IO.Path.Combine(nativeLibDir, "libfreetype6.so");
-				var exists = System.IO.File.Exists(freetypePath);
-
-				PLog("FreeType", $"nativeLibDir: {nativeLibDir}");
-				PLog("FreeType", $"path: {freetypePath}  exists: {exists}");
-
-				var freetypeHandle = NativeLibrary.Load(freetypePath);
-				PLog("FreeType", $"NativeLibrary.Load OK, handle={freetypeHandle}");
-
-				var thisAssembly = Assembly.GetExecutingAssembly();
-				NativeLibrary.SetDllImportResolver(thisAssembly, (libraryName, asm, searchPath) =>
-				{
-					if (libraryName == "freetype6")
-						return freetypeHandle;
-					return IntPtr.Zero;
-				});
-
-				PLog("FreeType", "DllImport resolver registered.");
+				PLog("OpenAL", "OpenAL-CS resolver registered.");
 			}
 			catch (Exception ex)
 			{
-				PLogError("FreeType", $"Resolver setup FAILED: {ex}");
-				try { System.IO.File.AppendAllText("/sdcard/openra_freetype_diag.txt", $"EXCEPTION: {ex}\n"); } catch { }
+				PLogError("OpenAL", $"Resolver setup: {ex.Message}");
 			}
+
+			// ── FreeType (freetype6) ────────────────────────────────────────────
+			// 1. Pre-load via Java loader (critical: searches APK native lib dir with linker namespace)
+			try
+			{
+				PLog("FreeType", "Calling JavaSystem.LoadLibrary(\"freetype6\")...");
+				Java.Lang.JavaSystem.LoadLibrary("freetype6");
+				PLog("FreeType", "JavaSystem.LoadLibrary(\"freetype6\") SUCCEEDED!");
+			}
+			catch (Exception ex)
+			{
+				PLogError("FreeType", $"JavaSystem.LoadLibrary(\"freetype6\") FAILED: {ex.Message}");
+			}
+
+			// 2. Resolve absolute path and attempt NativeLibrary.TryLoad
+			string freetypePath = null;
+			try
+			{
+				var nativeLibDir = context?.ApplicationInfo?.NativeLibraryDir;
+				PLog("FreeType", $"nativeLibDir: {nativeLibDir}");
+
+				if (!string.IsNullOrEmpty(nativeLibDir))
+				{
+					freetypePath = System.IO.Path.Combine(nativeLibDir, "libfreetype6.so");
+					var exists = System.IO.File.Exists(freetypePath);
+					PLog("FreeType", $"path: {freetypePath}  exists: {exists}");
+				}
+
+				if (freetypePath != null && NativeLibrary.TryLoad(freetypePath, out var h))
+				{
+					freetypeHandle = h;
+					PLog("FreeType", $"NativeLibrary.TryLoad({freetypePath}) OK: handle={h}");
+				}
+				else if (NativeLibrary.TryLoad("libfreetype6.so", out h))
+				{
+					freetypeHandle = h;
+					PLog("FreeType", $"NativeLibrary.TryLoad(libfreetype6.so) OK: handle={h}");
+				}
+				else if (NativeLibrary.TryLoad("freetype6", out h))
+				{
+					freetypeHandle = h;
+					PLog("FreeType", $"NativeLibrary.TryLoad(freetype6) OK: handle={h}");
+				}
+				else
+				{
+					PLogError("FreeType", "NativeLibrary.TryLoad could not load handle directly; will try in resolver callback.");
+				}
+			}
+			catch (Exception ex)
+			{
+				PLogError("FreeType", $"NativeLibrary probe: {ex.Message}");
+			}
+
+			// 3. Register resolver on the assembly containing FreeType DllImports
+			try
+			{
+				var targetAssembly = typeof(FreeTypeFont).Assembly;
+				NativeLibrary.SetDllImportResolver(targetAssembly, (libraryName, asm, searchPath) =>
+				{
+					PLog("Resolver", $"DllImport requested: '{libraryName}' in {asm?.GetName()?.Name}");
+					if (libraryName == "freetype6" || libraryName == "libfreetype6" || libraryName == "libfreetype6.so")
+					{
+						if (freetypeHandle != IntPtr.Zero)
+							return freetypeHandle;
+
+						if (freetypePath != null && NativeLibrary.TryLoad(freetypePath, asm, searchPath, out var h))
+							return freetypeHandle = h;
+
+						if (NativeLibrary.TryLoad("libfreetype6.so", asm, searchPath, out h))
+							return freetypeHandle = h;
+
+						if (NativeLibrary.TryLoad("freetype6", asm, searchPath, out h))
+							return freetypeHandle = h;
+
+						PLogError("Resolver", $"Failed to resolve '{libraryName}'!");
+					}
+
+					return IntPtr.Zero;
+				});
+
+				PLog("FreeType", $"DllImport resolver registered on {targetAssembly.GetName().Name}.");
+			}
+			catch (Exception ex)
+			{
+				PLogError("FreeType", $"SetDllImportResolver FAILED: {ex.Message}");
+			}
+		}
+
+		static AndroidPlatform()
+		{
+			Initialize(global::Android.App.Application.Context);
 		}
 
 		public static void SetWindow(AndroidPlatformWindow window) => Window = window;

@@ -160,6 +160,7 @@ namespace OpenRA.Android
 					ViewGroup.LayoutParams.MatchParent,
 					ViewGroup.LayoutParams.MatchParent)
 			};
+			_root.Elevation = 1000f;
 
 			BuildBubble();
 			BuildPanel();
@@ -171,6 +172,8 @@ namespace OpenRA.Android
 				ViewGroup.LayoutParams.MatchParent,
 				ViewGroup.LayoutParams.MatchParent));
 
+			_root.BringToFront();
+
 			// Live-update log when new entries arrive
 			DevConsole.OnNewEntry += entry =>
 			{
@@ -179,6 +182,11 @@ namespace OpenRA.Android
 			};
 
 			DevConsole.Info("DebugOverlay", "Overlay attached. Tap bubble to open console.");
+		}
+
+		public void BringToFront()
+		{
+			_root?.BringToFront();
 		}
 
 		// ── Bubble ─────────────────────────────────────────────────────────────
@@ -356,6 +364,7 @@ namespace OpenRA.Android
 		public void ShowPanel()
 		{
 			_panelVisible = true;
+			_root?.BringToFront();
 			_panel.Visibility   = ViewStates.Visible;
 			_bubble.Visibility  = ViewStates.Gone;
 

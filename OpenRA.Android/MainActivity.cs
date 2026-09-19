@@ -57,22 +57,26 @@ namespace OpenRA.Android
 			supportDir = Path.Combine(GetExternalFilesDir(null).AbsolutePath, "Support") + Path.DirectorySeparatorChar;
 			Directory.CreateDirectory(supportDir);
 
+			// Wire platform logs → in-app DevConsole first so all initialization logs are captured
+			AndroidPlatform.PlatformLogger      = (tag, msg) => DevConsole.Info(tag, msg);
+			AndroidPlatform.PlatformErrorLogger = (tag, msg) => DevConsole.Error(tag, msg);
+
+			// Pre-load and register native libraries (FreeType, OpenAL) with verbose logging
+			AndroidPlatform.Initialize(this);
+
 			var metrics = Resources.DisplayMetrics;
 			window = new AndroidPlatformWindow(metrics.WidthPixels, metrics.HeightPixels);
 			AndroidPlatform.SetWindow(window);
-
-			// Wire platform logs → in-app DevConsole
-			AndroidPlatform.PlatformLogger      = (tag, msg) => DevConsole.Info(tag, msg);
-			AndroidPlatform.PlatformErrorLogger = (tag, msg) => DevConsole.Error(tag, msg);
 
 			surfaceView = new OpenRASurfaceView(this, window);
 			window.HostView = surfaceView;
 			window.KeyboardDrainAction = ih => surfaceView.DrainKeyboardInput(ih);
 			SetContentView(surfaceView);
 
-			// Attach floating debug bubble overlay (draggable, tap to open full log panel)
+			// Attach floating debug bubble overlay AFTER SetContentView so it sits on top of SurfaceView
 			var overlay = DebugOverlay.Attach(this);
 			CrashHelper.SetOverlay(overlay);
+			overlay.BringToFront();
 
 			// Start the engine loop immediately. The window's WaitForSurfaceAndInitializeGl handles
 			// the Android surface churn (create->destroy->create during layout) by retrying.
