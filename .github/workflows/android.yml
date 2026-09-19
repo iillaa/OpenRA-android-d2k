@@ -110,7 +110,7 @@ jobs:
 
       - name: Build APK
         run: |
-          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug -p:BuildForAndroid=true
+          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Release -p:BuildForAndroid=true
 
       - name: Find APK
         id: apk
@@ -149,6 +149,6 @@ jobs:
         if: steps.apk.outputs.apk != ''
         uses: actions/upload-artifact@v4
         with:
-          name: OpenRA-Dune2000-debug
+          name: OpenRA-Dune2000-apk
           path: ${{ steps.apk.outputs.apk }}
           if-no-files-found: warn

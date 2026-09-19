@@ -10,8 +10,8 @@
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<AndroidPackageFormats>apk</AndroidPackageFormats>
 		<AndroidUseIntermediateDesignerFile>false</AndroidUseIntermediateDesignerFile>
-		<!-- Phase 0: produce a debug APK quickly. MonoAOT can be enabled later for perf. -->
-		<RunAOTCompilation>false</RunAOTCompilation>
+		<!-- Debug builds disable AOT for faster iteration. Release builds use AOT. -->
+		<RunAOTCompilation Condition="'Configuration' == 'Debug'">false</RunAOTCompilation>
 		<AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
 	</PropertyGroup>
 
