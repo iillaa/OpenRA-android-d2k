@@ -51,7 +51,7 @@ rm -rf "$TP/lua-build-$ABI"
 echo "[ok] liblua51.so"
 
 # ---------------------------------------------------------------------------
-# 2. FreeType 2  →  libfreetype6.so
+# 2. FreeType 2  →  libfreetype6.so & libfreetype.so
 # ---------------------------------------------------------------------------
 FREETYPE_SRC="$TP/freetype2"
 if [ ! -d "$FREETYPE_SRC" ]; then
@@ -66,21 +66,30 @@ cmake -S "$FREETYPE_SRC" -B "$TP/freetype-build-$ABI" \
 	-DANDROID_ABI="$ABI" \
 	-DANDROID_PLATFORM=android-$API \
 	-DCMAKE_BUILD_TYPE=Release \
-	-DFT_DISABLE_HINTING=ON
+	-DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384" \
+	-DBUILD_SHARED_LIBS=ON \
+	-DFT_DISABLE_BZIP2=ON \
+	-DFT_DISABLE_BROTLI=ON \
+	-DFT_DISABLE_HARFBUZZ=ON \
+	-DFT_DISABLE_PNG=ON \
+	-DFT_DISABLE_ZLIB=OFF
 cmake --build "$TP/freetype-build-$ABI" --config Release -j"$(nproc)"
 
-# Build a shared library from the CMake build's object files.
-# CMake places .o files under CMakeFiles/, so we use find to collect them all.
-FREETYPE_OBJS=$(find "$TP/freetype-build-$ABI/CMakeFiles/freetype.dir" -name "*.o" | sort)
-if [ -z "$FREETYPE_OBJS" ]; then
-	echo "ERROR: No .o files found in FreeType build directory"
-	exit 1
+SO_FILE=$(find "$TP/freetype-build-$ABI" -name "libfreetype*.so*" -type f | head -1)
+if [ -n "$SO_FILE" ]; then
+	echo "Found CMake FreeType shared lib: $SO_FILE"
+	cp "$SO_FILE" "$OUT/libfreetype6.so"
+	cp "$SO_FILE" "$OUT/libfreetype.so"
+else
+	echo "CMake did not produce .so, manually linking with -lz -lm..."
+	FREETYPE_OBJS=$(find "$TP/freetype-build-$ABI/CMakeFiles/freetype.dir" -name "*.o" | sort)
+	"$CC" -shared $LDFLAGS -Wl,-soname,libfreetype6.so \
+		-o "$OUT/libfreetype6.so" \
+		$FREETYPE_OBJS -lz -lm
+	cp "$OUT/libfreetype6.so" "$OUT/libfreetype.so"
 fi
-"$CC" -shared $LDFLAGS -Wl,-soname,libfreetype6.so \
-	-o "$OUT/libfreetype6.so" \
-	$FREETYPE_OBJS
 rm -rf "$TP/freetype-build-$ABI"
-echo "[ok] libfreetype6.so"
+echo "[ok] libfreetype6.so & libfreetype.so"
 
 # ---------------------------------------------------------------------------
 # 3. OpenAL-Soft  →  libsoft_oal.so

@@ -30,6 +30,7 @@ namespace OpenRA
 
 	public static class Log
 	{
+		public static Action<string, string> OnLogMessage;
 		const int CreateLogFileMaxRetryCount = 128;
 
 		static readonly ConcurrentDictionary<string, ChannelInfo> Channels = [];
@@ -92,6 +93,8 @@ namespace OpenRA
 
 		static void WriteValue(ChannelData item)
 		{
+			OnLogMessage?.Invoke(item.Channel, item.Text);
+
 			var channel = GetChannel(item.Channel);
 			var writer = channel.Writer;
 			if (writer == null)

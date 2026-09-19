@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>net9.0-android</TargetFramework>
 		<SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
@@ -56,6 +56,9 @@
 	     when CI builds the .so files first). -->
 	<ItemGroup Condition="Exists('jniLibs/arm64-v8a/libfreetype6.so')">
 		<AndroidNativeLibrary Include="jniLibs/arm64-v8a/libfreetype6.so" />
+	</ItemGroup>
+	<ItemGroup Condition="Exists('jniLibs/arm64-v8a/libfreetype.so')">
+		<AndroidNativeLibrary Include="jniLibs/arm64-v8a/libfreetype.so" />
 	</ItemGroup>
 	<ItemGroup Condition="Exists('jniLibs/arm64-v8a/liblua51.so')">
 		<AndroidNativeLibrary Include="jniLibs/arm64-v8a/liblua51.so" />

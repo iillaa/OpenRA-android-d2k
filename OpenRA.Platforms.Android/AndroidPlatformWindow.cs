@@ -47,11 +47,14 @@ namespace OpenRA.Platforms.Android
 		// DPI: Android exposes density. We treat EffectiveWindowScale == 1 for Phase 0 and let
 		// the engine scale UI from its own settings; surface/native sizes are reported in pixels.
 		float nativeScale = 1f;
+		float scaleModifier = 1f;
 
-		public Size NativeWindowSize { get; private set; }
-		public Size EffectiveWindowSize { get; private set; }
+		public Size NativeWindowSize => surfaceSize;
+		public Size EffectiveWindowSize => new Size(
+			(int)(surfaceSize.Width / (scaleModifier > 0 ? scaleModifier : 1f)),
+			(int)(surfaceSize.Height / (scaleModifier > 0 ? scaleModifier : 1f)));
 		public float NativeWindowScale => nativeScale;
-		public float EffectiveWindowScale => nativeScale;
+		public float EffectiveWindowScale => nativeScale * (scaleModifier > 0 ? scaleModifier : 1f);
 		public Size SurfaceSize => surfaceSize;
 		public int DisplayCount => 1;
 		public int CurrentDisplay => 0;
@@ -78,7 +81,7 @@ namespace OpenRA.Platforms.Android
 
 		public AndroidPlatformWindow(int width, int height)
 		{
-			NativeWindowSize = EffectiveWindowSize = surfaceSize = new Size(width, height);
+			surfaceSize = new Size(width, height);
 			input = new AndroidInput();
 		}
 
@@ -109,7 +112,6 @@ namespace OpenRA.Platforms.Android
 				if (w > 0 && h > 0)
 				{
 					surfaceSize = new Size(w, h);
-					NativeWindowSize = EffectiveWindowSize = surfaceSize;
 				}
 
 				pendingHolder = holder;
@@ -409,8 +411,16 @@ namespace OpenRA.Platforms.Android
 		public void SetRelativeMouseMode(bool mode) { }
 		public void SetScaleModifier(float scale)
 		{
-			nativeScale = scale;
-			OnWindowScaleChanged?.Invoke(nativeScale, scale, nativeScale, scale);
+			if (scale <= 0)
+				scale = 1f;
+
+			var oldEffectiveScale = EffectiveWindowScale;
+			var oldNativeScale = NativeWindowScale;
+
+			scaleModifier = scale;
+
+			global::Android.Util.Log.Info("OpenRA", $"SetScaleModifier: scale={scale}, EffectiveSize={EffectiveWindowSize}, SurfaceSize={SurfaceSize}");
+			OnWindowScaleChanged?.Invoke(oldNativeScale, oldEffectiveScale, NativeWindowScale, EffectiveWindowScale);
 		}
 
 		// The View that hosts the SurfaceView, set by the Activity so we can toggle the IME.

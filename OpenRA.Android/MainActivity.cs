@@ -61,6 +61,13 @@ namespace OpenRA.Android
 			AndroidPlatform.PlatformLogger      = (tag, msg) => DevConsole.Info(tag, msg);
 			AndroidPlatform.PlatformErrorLogger = (tag, msg) => DevConsole.Error(tag, msg);
 
+			// Bridge OpenRA in-game logs to in-app DevConsole
+			OpenRA.Log.OnLogMessage = (channel, msg) =>
+			{
+				if (channel == "sound" || channel == "graphics" || channel == "perf" || channel == "server" || channel == "debug" || channel == "order")
+					DevConsole.Info(channel, msg);
+			};
+
 			// Pre-load and register native libraries (FreeType, OpenAL) with verbose logging
 			AndroidPlatform.Initialize(this);
 

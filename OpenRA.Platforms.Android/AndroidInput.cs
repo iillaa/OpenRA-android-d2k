@@ -196,9 +196,12 @@ namespace OpenRA.Platforms.Android
 
 		public void PumpInput(IInputHandler inputHandler, Size windowSize, Size surfaceSize, float scale)
 		{
+			var scaleX = (surfaceSize.Width > 0 && windowSize.Width > 0) ? (float)windowSize.Width / surfaceSize.Width : 1f;
+			var scaleY = (surfaceSize.Height > 0 && windowSize.Height > 0) ? (float)windowSize.Height / surfaceSize.Height : 1f;
+
 			while (pending.TryDequeue(out var p))
 			{
-				var pos = new int2((int)p.X, (int)p.Y);
+				var pos = new int2((int)(p.X * scaleX), (int)(p.Y * scaleY));
 
 				if (p.IsMouse)
 				{
