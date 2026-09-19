@@ -289,8 +289,11 @@ namespace OpenRA.Android
 			var copyBtn  = MakeHeaderBtn("📋", () =>
 			{
 				var clip = (global::Android.Content.ClipboardManager)_activity.GetSystemService(Context.ClipboardService);
-				clip?.SetPrimaryClip(global::Android.Content.ClipData.NewPlainText("OpenRA Log", DevConsole.GetAllText()));
-				Toast.MakeText(_activity, "Copied!", ToastLength.Short)?.Show();
+				if (clip != null)
+				{
+					clip.PrimaryClip = global::Android.Content.ClipData.NewPlainText("OpenRA Log", DevConsole.GetAllText());
+					Toast.MakeText(_activity, "Copied!", ToastLength.Short)?.Show();
+				}
 			});
 
 			var clearBtn = MakeHeaderBtn("🗑", () =>
@@ -350,7 +353,7 @@ namespace OpenRA.Android
 		}
 
 		// ── Show / Hide ────────────────────────────────────────────────────────
-		void ShowPanel()
+		public void ShowPanel()
 		{
 			_panelVisible = true;
 			_panel.Visibility   = ViewStates.Visible;
@@ -361,7 +364,7 @@ namespace OpenRA.Android
 			_scroll.Post(() => _scroll.FullScroll(FocusSearchDirection.Down));
 		}
 
-		void HidePanel()
+		public void HidePanel()
 		{
 			_panelVisible = false;
 			_panel.Visibility  = ViewStates.Gone;
@@ -380,9 +383,7 @@ namespace OpenRA.Android
 
 		void AppendEntry(LogEntry entry)
 		{
-			var span = (_logView.TextFormatted as SpannableStringBuilder) ?? new SpannableStringBuilder(_logView.TextFormatted);
-			AppendToSpan(span, entry);
-			_logView.SetText(span, TextView.BufferType.Spannable);
+			RebuildLog();
 			_scroll.Post(() => _scroll.FullScroll(FocusSearchDirection.Down));
 		}
 
@@ -397,11 +398,11 @@ namespace OpenRA.Android
 			};
 
 			var line  = entry.Format() + "\n";
-			var start = span.Length();
+			var start = span.Length;
 			span.Append(line);
 			span.SetSpan(
 				new global::Android.Text.Style.ForegroundColorSpan(color),
-				start, span.Length(),
+				start, span.Length,
 				SpanTypes.ExclusiveExclusive);
 		}
 	}
@@ -429,12 +430,10 @@ namespace OpenRA.Android
 			// sdcard fallback
 			try { System.IO.File.WriteAllText("/sdcard/openra_crash.txt", DevConsole.GetAllText()); } catch { }
 
-			// Show the panel on the UI thread
+			// Show the panel on the UI thread automatically so crash is immediately visible
 			activity.RunOnUiThread(() =>
 			{
-				// Show overlay panel inline — no new Activity needed
-				// We trigger it by calling Show via reflection or a static hook:
-				DevConsole.Error("CRASH", "▲ Crash logged above. Tap 🐛 if panel closed.");
+				_overlay?.ShowPanel();
 			});
 		}
 	}
