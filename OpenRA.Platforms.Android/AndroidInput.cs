@@ -157,7 +157,7 @@ namespace OpenRA.Platforms.Android
 		public void EnqueueMouse(MotionEvent e, Size windowSize)
 		{
 			var action = e.ActionMasked;
-			var pos = new int2((int)e.X, (int)e.Y);
+			var pos = new int2((int)e.GetX(0), (int)e.GetY(0));
 
 			if (action == MotionEventActions.Scroll)
 			{
@@ -173,7 +173,7 @@ namespace OpenRA.Platforms.Android
 					PointerId = -1,
 					TimestampMs = e.EventTime,
 					IsMouse = true,
-					ButtonState = e.ButtonState,
+					ButtonState = (int)e.ButtonState,
 					ScrollDelta = dy != 0 ? dy : dx
 				});
 			}
@@ -187,7 +187,7 @@ namespace OpenRA.Platforms.Android
 					PointerId = -1,
 					TimestampMs = e.EventTime,
 					IsMouse = true,
-					ButtonState = e.ButtonState
+					ButtonState = (int)e.ButtonState
 				});
 			}
 		}
@@ -341,8 +341,8 @@ namespace OpenRA.Platforms.Android
 			// Fire Down for buttons newly pressed since the last event.
 			if ((curr & MouseBtnPrimary) != 0 && (prev & MouseBtnPrimary) == 0)
 			{
-				var tapCount = MultiTapDetection.DetectFromMouse(0, pos);
-				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, pos, int2.Zero, Modifiers.None, tapCount));
+				var downTapCount = MultiTapDetection.DetectFromMouse(0, pos);
+				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, pos, int2.Zero, Modifiers.None, downTapCount));
 			}
 
 			if ((curr & MouseBtnSecondary) != 0 && (prev & MouseBtnSecondary) == 0)
