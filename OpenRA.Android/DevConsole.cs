@@ -288,8 +288,8 @@ namespace OpenRA.Android
 
 			var copyBtn  = MakeHeaderBtn("📋", () =>
 			{
-				var clip = (ClipboardManager)_activity.GetSystemService(Context.ClipboardService);
-				clip?.SetPrimaryClip(ClipData.NewPlainText("OpenRA Log", DevConsole.GetAllText()));
+				var clip = (global::Android.Content.ClipboardManager)_activity.GetSystemService(Context.ClipboardService);
+				clip?.SetPrimaryClip(global::Android.Content.ClipData.NewPlainText("OpenRA Log", DevConsole.GetAllText()));
 				Toast.MakeText(_activity, "Copied!", ToastLength.Short)?.Show();
 			});
 
