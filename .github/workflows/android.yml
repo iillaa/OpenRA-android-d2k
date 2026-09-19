@@ -103,12 +103,11 @@ jobs:
 
       - name: Build APK
         run: |
-          set -x
-          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug --no-incremental 2>&1
-          set +x
+          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug
 
       - name: Find APK
         id: apk
+        if: always()
         continue-on-error: true
         run: |
           echo "=== Full bin/ tree ==="
@@ -116,8 +115,11 @@ jobs:
           echo "=== Listing all files in OpenRA.Android/bin ==="
           ls -laR OpenRA.Android/bin/ 2>/dev/null | tail -40 || echo "No bin/ dir"
           echo "=== Searching whole repo ==="
-          find . -name "*.apk" -o -name "*.aab" 2>/dev/null | head -10
-          APK=$(find OpenRA.Android/bin -name "*.apk" 2>/dev/null | head -1)
+          find . -name "*.apk" 2>/dev/null | head -10
+          APK=$(find . -name "*-Signed.apk" 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find . -name "*.apk" 2>/dev/null | grep -v obj/ | head -1)
+          fi
           echo "apk=$APK"
           echo "apk=$APK" >> $GITHUB_OUTPUT
 
