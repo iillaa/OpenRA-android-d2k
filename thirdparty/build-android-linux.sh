@@ -71,7 +71,7 @@ cmake --build "$TP/freetype-build-$ABI" --config Release -j"$(nproc)"
 
 # Build a shared library from the CMake build's object files.
 # CMake places .o files under CMakeFiles/, so we use find to collect them all.
-FREETYPE_OBJS=$(find "$TP/freetype-build-$ABI" -name "*.o" | sort)
+FREETYPE_OBJS=$(find "$TP/freetype-build-$ABI/CMakeFiles/freetype.dir" -name "*.o" | sort)
 if [ -z "$FREETYPE_OBJS" ]; then
 	echo "ERROR: No .o files found in FreeType build directory"
 	exit 1
