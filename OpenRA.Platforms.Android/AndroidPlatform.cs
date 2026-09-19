@@ -23,69 +23,73 @@ namespace OpenRA.Platforms.Android
 	{
 		public static AndroidPlatformWindow Window { get; private set; }
 
+		// App layer (OpenRA.Android) sets this to receive platform log messages in the
+		// in-app DevConsole without creating a circular project reference.
+		public static Action<string, string> PlatformLogger { get; set; }
+		public static Action<string, string> PlatformErrorLogger { get; set; }
+
+		static void PLog(string tag, string msg)
+		{
+			global::Android.Util.Log.Info("OpenRA", $"[{tag}] {msg}");
+			PlatformLogger?.Invoke(tag, msg);
+		}
+
+		static void PLogError(string tag, string msg)
+		{
+			global::Android.Util.Log.Error("OpenRA", $"[{tag}] {msg}");
+			PlatformErrorLogger?.Invoke(tag, msg);
+		}
+
 		static AndroidPlatform()
 		{
-			// .NET Android does not apply the legacy Mono dllmap from OpenAL-CS.dll.config, so
-			// DllImport("soft_oal") fails to resolve to libsoft_oal.so. Register a resolver on the
-			// OpenAL assembly that performs the mapping manually.
-			try
-			{
-				// Pre-load via Java's loader, which searches the app's nativeLibraryDir.
-				Java.Lang.JavaSystem.LoadLibrary("soft_oal");
-			}
-			catch { /* may throw if already loaded — that's fine */ }
+			// ── OpenAL (soft_oal) ───────────────────────────────────────────────
+			// .NET Android does not apply the legacy Mono dllmap from OpenAL-CS.dll.config,
+			// so DllImport("soft_oal") fails. Pre-load via Java's loader then register resolver.
+			try { Java.Lang.JavaSystem.LoadLibrary("soft_oal"); }
+			catch { /* already loaded — fine */ }
 
-	
 			try
 			{
 				var openalAssembly = Assembly.Load("OpenAL-CS");
 				NativeLibrary.SetDllImportResolver(openalAssembly, (libraryName, asm, searchPath) =>
 				{
 					if (libraryName == "soft_oal")
-					{
-						// Try several name variants that .NET Android may search for.
 						foreach (var name in new[] { "soft_oal", "libsoft_oal.so", "libsoft_oal" })
 							if (NativeLibrary.TryLoad(name, asm, DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.UserDirectories, out var handle))
 								return handle;
-					}
-
 					return IntPtr.Zero;
 				});
 			}
 			catch { }
 
-			// Also register a resolver for the current assembly (which contains FreeType imports).
-			// NativeLibrary.TryLoad with ApplicationDirectory does NOT search the APK native lib
-			// dir on .NET Android. We must resolve the absolute path via Android's ApplicationInfo.
+			// ── FreeType (freetype6) ────────────────────────────────────────────
+			// NativeLibrary.TryLoad with ApplicationDirectory does NOT search the APK native
+			// lib dir on .NET Android. Load via absolute path from ApplicationInfo.NativeLibraryDir.
 			try
 			{
 				var nativeLibDir = global::Android.App.Application.Context.ApplicationInfo.NativeLibraryDir;
 				var freetypePath = System.IO.Path.Combine(nativeLibDir, "libfreetype6.so");
 				var exists = System.IO.File.Exists(freetypePath);
 
-				global::Android.Util.Log.Info("OpenRA", $"FreeType: nativeLibDir={nativeLibDir} exists={exists}");
-				OpenRA.Android.DevConsole.Log("FreeType", $"nativeLibDir: {nativeLibDir}");
-				OpenRA.Android.DevConsole.Log("FreeType", $"path: {freetypePath}  exists: {exists}");
+				PLog("FreeType", $"nativeLibDir: {nativeLibDir}");
+				PLog("FreeType", $"path: {freetypePath}  exists: {exists}");
 
 				var freetypeHandle = NativeLibrary.Load(freetypePath);
-				global::Android.Util.Log.Info("OpenRA", $"FreeType loaded: handle={freetypeHandle}");
-				OpenRA.Android.DevConsole.Log("FreeType", $"NativeLibrary.Load succeeded, handle={freetypeHandle}");
+				PLog("FreeType", $"NativeLibrary.Load OK, handle={freetypeHandle}");
 
 				var thisAssembly = Assembly.GetExecutingAssembly();
 				NativeLibrary.SetDllImportResolver(thisAssembly, (libraryName, asm, searchPath) =>
 				{
 					if (libraryName == "freetype6")
 						return freetypeHandle;
-
 					return IntPtr.Zero;
 				});
 
-				OpenRA.Android.DevConsole.Log("FreeType", "DllImport resolver registered OK.");
+				PLog("FreeType", "DllImport resolver registered.");
 			}
 			catch (Exception ex)
 			{
-				global::Android.Util.Log.Error("OpenRA", $"FreeType resolver setup failed: {ex}");
-				OpenRA.Android.DevConsole.Log("FreeType", $"FAILED: {ex}");
+				PLogError("FreeType", $"Resolver setup FAILED: {ex}");
 				try { System.IO.File.AppendAllText("/sdcard/openra_freetype_diag.txt", $"EXCEPTION: {ex}\n"); } catch { }
 			}
 		}
@@ -113,14 +117,14 @@ namespace OpenRA.Platforms.Android
 		{
 			try
 			{
-				global::Android.Util.Log.Info("OpenRA", "CreateSound: initializing OpenAL...");
+				PLog("OpenAL", "Initializing OpenAL...");
 				var engine = new OpenAlSoundEngine(device);
-				global::Android.Util.Log.Info("OpenRA", "CreateSound: OpenAL initialized successfully");
+				PLog("OpenAL", "Initialized successfully.");
 				return engine;
 			}
 			catch (Exception e)
 			{
-				global::Android.Util.Log.Error("OpenRA", $"CreateSound: OpenAL failed: {e}");
+				PLogError("OpenAL", $"Failed: {e}");
 				Log.Write("sound", "Failed to initialize OpenAL device. Error was");
 				Log.Write("sound", e);
 				return new DummySoundEngine();

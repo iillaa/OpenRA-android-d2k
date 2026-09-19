@@ -61,6 +61,10 @@ namespace OpenRA.Android
 			window = new AndroidPlatformWindow(metrics.WidthPixels, metrics.HeightPixels);
 			AndroidPlatform.SetWindow(window);
 
+			// Wire platform logs → in-app DevConsole
+			AndroidPlatform.PlatformLogger      = (tag, msg) => DevConsole.Info(tag, msg);
+			AndroidPlatform.PlatformErrorLogger = (tag, msg) => DevConsole.Error(tag, msg);
+
 			surfaceView = new OpenRASurfaceView(this, window);
 			window.HostView = surfaceView;
 			window.KeyboardDrainAction = ih => surfaceView.DrainKeyboardInput(ih);
