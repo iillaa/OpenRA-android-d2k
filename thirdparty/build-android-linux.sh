@@ -60,23 +60,25 @@ if [ ! -d "$FREETYPE_SRC" ]; then
 	tar xzf /tmp/freetype.tgz -C "$FREETYPE_SRC" --strip-components=1
 fi
 rm -rf "$TP/freetype-build-$ABI"
+mkdir -p "$TP/freetype-build-$ABI"
 cmake -S "$FREETYPE_SRC" -B "$TP/freetype-build-$ABI" \
 	-DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
 	-DANDROID_ABI="$ABI" \
 	-DANDROID_PLATFORM=android-$API \
-	-DANDROID_STL=none \
 	-DCMAKE_BUILD_TYPE=Release \
-	-DCMAKE_INSTALL_PREFIX="$TP/freetype-android" \
-	-DFT_DISABLE_HINTING=ON \
-	-DFT_DISABLE_BROXML=OFF
+	-DFT_DISABLE_HINTING=ON
 cmake --build "$TP/freetype-build-$ABI" --config Release -j"$(nproc)"
-cp "$TP/freetype-build-$ABI/libfreetype.a" "$OUT/" 2>/dev/null || true
-# freetype is consumed as a static lib by the engine; for dynamic loading build a shared lib too
+
+# Build a shared library from the CMake build's object files.
+# CMake places .o files under CMakeFiles/, so we use find to collect them all.
+FREETYPE_OBJS=$(find "$TP/freetype-build-$ABI" -name "*.o" | sort)
+if [ -z "$FREETYPE_OBJS" ]; then
+	echo "ERROR: No .o files found in FreeType build directory"
+	exit 1
+fi
 "$CC" -shared $LDFLAGS -Wl,-soname,libfreetype6.so \
 	-o "$OUT/libfreetype6.so" \
-	"$TP/freetype-build-$ABI/"*.o 2>/dev/null || \
-	"$CC" -shared $LDFLAGS -o "$OUT/libfreetype6.so" \
-	$(find "$TP/freetype-build-$ABI" -name "*.o") || true
+	$FREETYPE_OBJS
 rm -rf "$TP/freetype-build-$ABI"
 echo "[ok] libfreetype6.so"
 
@@ -106,13 +108,32 @@ cmake -S "$OPENAL_SRC" -B "$TP/openal-build-$ABI" \
 	-DALSOFT_INSTALL=ON \
 	-DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384"
 cmake --build "$TP/openal-build-$ABI" --config Release -j"$(nproc)"
-cmake --install "$TP/openal-build-$ABI" --config Release
-cp "$TP/openal-android/lib/libopenal.so" "$OUT/libsoft_oal.so" 2>/dev/null || \
-	cp "$TP/openal-build-$ABI/libopenal.so" "$OUT/libsoft_oal.so" 2>/dev/null || \
-	find "$TP/openal-build-$ABI" -name "libopenal.so" -exec cp {} "$OUT/libsoft_oal.so" \;
+# Try to find the built shared library in several possible locations
+OPENAL_SO=$(find "$TP/openal-build-$ABI" -name "libopenal.so" -print -quit)
+if [ -z "$OPENAL_SO" ]; then
+	cmake --install "$TP/openal-build-$ABI" --config Release 2>/dev/null || true
+	OPENAL_SO=$(find "$TP/openal-android" -name "libopenal.so" -print -quit)
+	if [ -z "$OPENAL_SO" ]; then
+		OPENAL_SO=$(find "$TP" -path "*/openal-android*" -name "libopenal.so" -print -quit)
+	fi
+fi
+if [ -z "$OPENAL_SO" ]; then
+	echo "ERROR: libopenal.so not found after CMake build and install"
+	exit 1
+fi
+cp "$OPENAL_SO" "$OUT/libsoft_oal.so"
 rm -rf "$TP/openal-build-$ABI" "$TP/openal-android"
 echo "[ok] libsoft_oal.so"
 
 echo ""
 echo "=== All native libraries built ==="
 ls -lh "$OUT"
+
+# Verify all required libraries are present
+for lib in liblua51.so libfreetype6.so libsoft_oal.so; do
+	if [ ! -f "$OUT/$lib" ]; then
+		echo "ERROR: $lib is missing from $OUT!"
+		exit 1
+	fi
+	echo "  OK: $lib"
+done
