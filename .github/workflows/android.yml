@@ -13,7 +13,6 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      DOTNET_CLI_TELEMETRY_OPS: 1
 
     steps:
       - name: Checkout
@@ -28,6 +27,21 @@ jobs:
         run: |
           dotnet workload install android
           dotnet workload restore
+
+      - name: Verify SDK
+        run: |
+          echo "dotnet: $(dotnet --version)"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          which java
+          java -version 2>&1
+          echo "=== sdkmanager locations ==="
+          for path in \
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_HOME/cmdline-tools/*/bin/sdkmanager" \
+            "$ANDROID_HOME/tools/bin/sdkmanager"; do
+            [ -f "$path" ] && echo "Found: $path"
+          done
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -104,20 +118,26 @@ jobs:
 
       - name: Build APK
         run: |
-          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug -f net9.0-android
+          set -x
+          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug --no-incremental 2>&1
+          set +x
 
       - name: Find APK
         id: apk
+        continue-on-error: true
         run: |
-          echo "=== bin/Debug tree ==="
-          find OpenRA.Android/bin/Debug -name "*.apk" -o -name "*.aab" 2>/dev/null | head -10
-          echo "=== All .apk files in repo ==="
-          find . -name "*.apk" 2>/dev/null | head -10
-          APK=$(find OpenRA.Android/bin/Debug -name "*.apk" 2>/dev/null | head -1)
-          echo "apk=$APK" >> $GITHUB_OUTPUT
+          echo "=== Full bin/ tree ==="
+          find OpenRA.Android/bin -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | head -20
+          echo "=== Listing all files in OpenRA.Android/bin ==="
+          ls -laR OpenRA.Android/bin/ 2>/dev/null | tail -40 || echo "No bin/ dir"
+          echo "=== Searching whole repo ==="
+          find . -name "*.apk" -o -name "*.aab" 2>/dev/null | head -10
+          APK=$(find OpenRA.Android/bin -name "*.apk" 2>/dev/null | head -1)
           echo "apk=$APK"
+          echo "apk=$APK" >> $GITHUB_OUTPUT
 
       - name: Upload APK
+        if: steps.apk.outputs.apk != ''
         uses: actions/upload-artifact@v4
         with:
           name: OpenRA-Dune2000-debug
