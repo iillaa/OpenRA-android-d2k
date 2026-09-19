@@ -556,11 +556,12 @@ namespace OpenRA.Mods.Common.Widgets
 			Game.Renderer.EnableAntialiasingFilter();
 			foreach (var icon in icons.Values)
 			{
-				WidgetUtils.DrawSpriteCentered(icon.Sprite, icon.Palette, icon.Pos + iconOffset);
+				var iconScale = icon.Sprite != null && icon.Sprite.Size.X > 0 ? (float)IconSize.X / icon.Sprite.Size.X : 1f;
+				WidgetUtils.DrawSpriteCentered(icon.Sprite, icon.Palette, icon.Pos + iconOffset, iconScale);
 
 				// Draw the ProductionIconOverlay's sprites
 				foreach (var pio in pios.Where(p => p.IsOverlayActive(icon.Actor)))
-					WidgetUtils.DrawSpriteCentered(pio.Sprite, worldRenderer.Palette(pio.Palette), icon.Pos + iconOffset + pio.Offset(IconSize));
+					WidgetUtils.DrawSpriteCentered(pio.Sprite, worldRenderer.Palette(pio.Palette), icon.Pos + iconOffset + pio.Offset(IconSize), iconScale);
 
 				// Build progress
 				if (icon.Queued.Count > 0)
@@ -571,10 +572,14 @@ namespace OpenRA.Mods.Common.Widgets
 							* (clock.CurrentSequence.Length - 1) / first.TotalTime);
 					clock.Tick();
 
-					WidgetUtils.DrawSpriteCentered(clock.Image, icon.IconClockPalette, icon.Pos + iconOffset);
+					var clockScale = clock.Image != null && clock.Image.Size.X > 0 ? (float)IconSize.X / clock.Image.Size.X : iconScale;
+					WidgetUtils.DrawSpriteCentered(clock.Image, icon.IconClockPalette, icon.Pos + iconOffset, clockScale);
 				}
 				else if (!buildableItems.Any(a => a.Name == icon.Name))
-					WidgetUtils.DrawSpriteCentered(cantBuild.Image, icon.IconDarkenPalette, icon.Pos + iconOffset);
+				{
+					var cantBuildScale = cantBuild.Image != null && cantBuild.Image.Size.X > 0 ? (float)IconSize.X / cantBuild.Image.Size.X : iconScale;
+					WidgetUtils.DrawSpriteCentered(cantBuild.Image, icon.IconDarkenPalette, icon.Pos + iconOffset, cantBuildScale);
+				}
 			}
 
 			Game.Renderer.DisableAntialiasingFilter();

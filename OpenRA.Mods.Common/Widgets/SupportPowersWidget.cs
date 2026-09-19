@@ -209,7 +209,8 @@ namespace OpenRA.Mods.Common.Widgets
 			Game.Renderer.EnableAntialiasingFilter();
 			foreach (var p in icons.Values)
 			{
-				WidgetUtils.DrawSpriteCentered(p.Sprite, p.Palette, p.Pos + iconOffset);
+				var iconScale = p.Sprite != null && p.Sprite.Size.X > 0 ? (float)IconSize.X / p.Sprite.Size.X : 1f;
+				WidgetUtils.DrawSpriteCentered(p.Sprite, p.Palette, p.Pos + iconOffset, iconScale);
 
 				// Charge progress
 				var sp = p.Power;
@@ -218,7 +219,8 @@ namespace OpenRA.Mods.Common.Widgets
 					* (clock.CurrentSequence.Length - 1) / sp.TotalTicks);
 
 				clock.Tick();
-				WidgetUtils.DrawSpriteCentered(clock.Image, p.IconClockPalette, p.Pos + iconOffset);
+				var clockScale = clock.Image != null && clock.Image.Size.X > 0 ? (float)IconSize.X / clock.Image.Size.X : iconScale;
+				WidgetUtils.DrawSpriteCentered(clock.Image, p.IconClockPalette, p.Pos + iconOffset, clockScale);
 			}
 
 			Game.Renderer.DisableAntialiasingFilter();
