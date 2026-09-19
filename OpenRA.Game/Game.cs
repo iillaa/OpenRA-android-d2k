@@ -433,9 +433,11 @@ namespace OpenRA
 
 			// Android has its own compiled-in platform (OpenRA.Platforms.Android) and no on-disk
 			// platform DLL, so we skip the settings/configured defaults and target it directly.
+#pragma warning disable IDE0300
 			var platforms = OperatingSystem.IsAndroid()
-				? [ "Android", null ]
-				: [ Settings.Game.Platform, "Default", null ];
+				? new[] { "Android", null }
+				: new[] { Settings.Game.Platform, "Default", null };
+#pragma warning restore IDE0300
 			foreach (var p in platforms)
 			{
 				if (p == null)
