@@ -794,20 +794,20 @@ namespace OpenRA.Platforms.Android
 
 		static void DebugMessageHandler(int source, int type, uint id, int severity, int length, StringBuilder message, IntPtr userparam)
 		{
-			string error;
+			var error = BuildErrorText(source, type, severity, message);
 
-			switch (severity)
+			// Performance warnings (e.g. Adreno buffer alias space warnings), portability hints,
+			// or other non-error debug messages from the GPU driver should never crash the game.
+			if (type != GL_DEBUG_TYPE_ERROR)
 			{
-				case GL_DEBUG_SEVERITY_HIGH:
-					error = BuildErrorText(source, type, severity, message);
-					WriteGraphicsLog(error);
-					throw new InvalidOperationException("OpenGL Error: See graphics.log for details.");
-
-				case GL_DEBUG_SEVERITY_MEDIUM:
-					error = BuildErrorText(source, type, severity, message);
-					Console.WriteLine(error);
-					break;
+				Console.WriteLine(error);
+				return;
 			}
+
+			WriteGraphicsLog(error);
+
+			if (severity == GL_DEBUG_SEVERITY_HIGH)
+				throw new InvalidOperationException("OpenGL Error: See graphics.log for details.");
 		}
 
 		static string BuildErrorText(int source, int type, int severity, StringBuilder message)
