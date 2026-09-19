@@ -121,14 +121,23 @@ namespace OpenRA.Platforms.Android
 				try
 				{
 					if (eglDisplay == Egl.EGL_NO_DISPLAY)
+					{
+						global::Android.Util.Log.Info("OpenRA", "NotifySurfaceReady: creating EGL context");
 						CreateEglContext(holder);
+						global::Android.Util.Log.Info("OpenRA", $"NotifySurfaceReady: EGL context created, eglContext={eglContext}, eglConfig={eglConfig}");
+					}
 
 					if (eglSurface == Egl.EGL_NO_SURFACE)
+					{
+						global::Android.Util.Log.Info("OpenRA", "NotifySurfaceReady: creating EGL surface");
 						CreateEglSurface(holder);
+						global::Android.Util.Log.Info("OpenRA", $"NotifySurfaceReady: EGL surface created, eglSurface={eglSurface}");
+					}
 
 					surfaceAvailable = true;
 					surfaceNeedsRecreate = false;
 					surfaceRecreated = true;
+					global::Android.Util.Log.Info("OpenRA", "NotifySurfaceReady: EGL setup complete");
 				}
 				catch (Exception e)
 				{
@@ -291,13 +300,15 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
-		void CreateEglSurface(global::Android.Views.ISurfaceHolder holder)
-		{
-			// eglCreateWindowSurface needs an ANativeWindow*, not the Java Surface handle.
-			// Use ANativeWindow_fromSurface to unwrap the Java object. JNIEnv.Handle is the
-			// current thread's JNIEnv*; holder.Surface.Handle is the JNI local ref to the Surface.
-			var surface = holder.Surface;
-			var window = Egl.ANativeWindow_fromSurface(JNIEnv.Handle, surface.Handle);
+ 		void CreateEglSurface(global::Android.Views.ISurfaceHolder holder)
+ 		{
+ 			// eglCreateWindowSurface needs an ANativeWindow*, not the Java Surface handle.
+ 			// Use ANativeWindow_fromSurface to unwrap the Java object. JNIEnv.Handle is the
+ 			// current thread's JNIEnv*; holder.Surface.Handle is the JNI local ref to the Surface.
+ 			var surface = holder.Surface;
+ 			global::Android.Util.Log.Info("OpenRA", $"CreateEglSurface: holder.Surface={surface}, JNIEnv.Handle={JNIEnv.Handle}");
+ 			var window = Egl.ANativeWindow_fromSurface(JNIEnv.Handle, surface.Handle);
+ 			global::Android.Util.Log.Info("OpenRA", $"CreateEglSurface: ANativeWindow={window}");
 
 			var surfaceAttribs = new int[] { Egl.EGL_NONE };
 			eglSurface = Egl.eglCreateWindowSurface(eglDisplay, eglConfig, window, surfaceAttribs);
