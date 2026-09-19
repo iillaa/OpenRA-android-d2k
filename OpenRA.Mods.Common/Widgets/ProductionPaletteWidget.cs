@@ -556,7 +556,7 @@ namespace OpenRA.Mods.Common.Widgets
 			Game.Renderer.EnableAntialiasingFilter();
 			foreach (var icon in icons.Values)
 			{
-				var iconScale = icon.Sprite != null && icon.Sprite.Size.X > 0 ? (float)IconSize.X / icon.Sprite.Size.X : 1f;
+				var iconScale = icon.Sprite != null && icon.Sprite.Size.X > 0 ? IconSize.X / icon.Sprite.Size.X : 1f;
 				WidgetUtils.DrawSpriteCentered(icon.Sprite, icon.Palette, icon.Pos + iconOffset, iconScale);
 
 				// Draw the ProductionIconOverlay's sprites
@@ -572,12 +572,12 @@ namespace OpenRA.Mods.Common.Widgets
 							* (clock.CurrentSequence.Length - 1) / first.TotalTime);
 					clock.Tick();
 
-					var clockScale = clock.Image != null && clock.Image.Size.X > 0 ? (float)IconSize.X / clock.Image.Size.X : iconScale;
+					var clockScale = clock.Image != null && clock.Image.Size.X > 0 ? IconSize.X / clock.Image.Size.X : iconScale;
 					WidgetUtils.DrawSpriteCentered(clock.Image, icon.IconClockPalette, icon.Pos + iconOffset, clockScale);
 				}
 				else if (!buildableItems.Any(a => a.Name == icon.Name))
 				{
-					var cantBuildScale = cantBuild.Image != null && cantBuild.Image.Size.X > 0 ? (float)IconSize.X / cantBuild.Image.Size.X : iconScale;
+					var cantBuildScale = cantBuild.Image != null && cantBuild.Image.Size.X > 0 ? IconSize.X / cantBuild.Image.Size.X : iconScale;
 					WidgetUtils.DrawSpriteCentered(cantBuild.Image, icon.IconDarkenPalette, icon.Pos + iconOffset, cantBuildScale);
 				}
 			}

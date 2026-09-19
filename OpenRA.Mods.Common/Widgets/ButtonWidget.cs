@@ -93,11 +93,13 @@ namespace OpenRA.Mods.Common.Widgets
 			GetTooltipDesc = () => tooltipDescCache.Update(TooltipDesc);
 			tooltipContainer = Exts.Lazy(() =>
 				Ui.Root.Get<TooltipContainerWidget>(TooltipContainer));
+			IgnoreChildMouseOver = true;
 		}
 
 		protected ButtonWidget(ButtonWidget other)
 			: base(other)
 		{
+			IgnoreChildMouseOver = true;
 			ModRules = other.ModRules;
 
 			Text = other.Text;

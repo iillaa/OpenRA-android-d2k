@@ -18,49 +18,46 @@ using OpenRA.Primitives;
 
 namespace OpenRA.Platforms.Android
 {
-	// Translates Android MotionEvents (multi-touch and hardware-mouse) into OpenRA MouseInputs.
+	// Translates Android MotionEvents (multi-touch and hardware/Bluetooth mouse) into OpenRA MouseInputs.
 	//
 	// Touch model:
-	//   - Single tap          = left click (with double-tap detection via MultiTapDetection)
-	//   - Long press (>500ms) = right-click (context menu, unit orders)
-	//   - Drag                = mouse move with left button held (scroll the map, drag-select)
-	//   - Two-finger pinch    = scroll/zoom (synthesized as MouseInputEvent.Scroll)
-	//   - Two-finger drag     = map pan (mouse move with right button held)
+	//   - Single tap          = Left click (Select unit / order move or attack in Classic mode / click HUD)
+	//   - Single-finger drag  = Map panning (smooth 1:1 camera navigation across the battlefield, no jump)
+	//   - Two-finger drag     = Unit box-selection (draws green box to select multiple units)
+	//   - Four-finger pinch   = Zoom in/out (natural two-handed gesture, does not compete with box select)
 	//
-	// Mouse model (hardware mouse via OnGenericMotionEvent):
-	//   - Left/right/middle buttons map directly and instantly to MouseButton events (no
-	//     long-press timer).
-	//   - Hover motion = Move with no button held (cursor position update).
-	//   - Scroll wheel = Scroll event.
+	// Mouse model (hardware / Bluetooth mouse):
+	//   - Left/right/middle buttons map directly and instantly to MouseButton events (no touch delays).
+	//   - Hover motion = Move with no button held (updates cursor position and enables edge scrolling).
+	//   - Scroll wheel = Scroll event (zooms in/out).
 	sealed class AndroidInput
 	{
 		readonly ConcurrentQueue<PendingInput> pending = new();
 
-		// Primary finger state (left button).
-		int primaryPointerId = -1;
+		enum TouchGestureState { None, PotentialTap, Panning, BoxSelecting, Pinching }
+		TouchGestureState touchState = TouchGestureState.None;
+
+		// Primary finger state
 		int2 primaryDownPos;
-		Stopwatch primaryDownTimer;
+		int2 primaryLastPos;
+		long primaryDownTimeMs;
 
-		// Secondary finger state (right button / pan).
-		int secondaryPointerId = -1;
+		// Box selection state
+		int2 boxStartPos;
+		int2 boxLastPos;
 
-		// Pinch state.
-		float lastPinchDist;
+		// Pinch tracking (4 fingers)
+		float lastPinchRadius;
+		bool ignoreTouchesUntilAllUp;
 
-		// Long-press detection threshold.
-		const int LongPressMs = 500;
-		const int TouchSlopPx = 16;
+		const int TouchSlopPx = 25;
+		const int MaxTapDurationMs = 350;
+		const int MaxTapDistancePx = 25;
 
-		// Suppresses the Up event when a long-press already fired a right-click.
-		bool longPressFired;
-
-		// Physical-mouse state tracking (hardware mouse / trackball via OnGenericMotionEvent).
-		// These are kept separate from the touch-pointer state above so mouse actions bypass
-		// the touch long-press timer entirely for instant left/right/middle clicks.
+		// Physical-mouse state tracking
 		int lastMouseButtonState;
 		int2 lastMousePos;
 
-		// Android MotionEvent button-state bitmasks (see MotionEvent.BUTTON_*).
 		const int MouseBtnPrimary = 1;   // left
 		const int MouseBtnSecondary = 2; // right
 		const int MouseBtnTertiary = 4;  // middle
@@ -70,13 +67,12 @@ namespace OpenRA.Platforms.Android
 			public MotionEventActions Action;
 			public float X;
 			public float Y;
+			public float X2;
+			public float Y2;
+			public int PointerCount;
 			public int PointerId;
 			public long TimestampMs;
-			// Filled only for mouse events (IsMouse == true). Carries the Android ButtonState
-			// bitmask so PumpInput can diff against the previous state to synthesize exact
-			// button Down/Up transitions.
 			public int ButtonState;
-			// For mouse ACTION_SCROLL: the scroll delta (read by PumpInput).
 			public int ScrollDelta;
 			public bool IsMouse;
 		}
@@ -85,75 +81,58 @@ namespace OpenRA.Platforms.Android
 		{
 			var action = e.ActionMasked;
 			var index = e.ActionIndex;
+			var count = e.PointerCount;
 
-			if (action == MotionEventActions.Move)
+			var pi = new PendingInput
 			{
-				// Forward moves for all tracked fingers.
-				for (var i = 0; i < e.PointerCount; i++)
+				Action = action,
+				PointerCount = count,
+				PointerId = e.GetPointerId(index),
+				TimestampMs = e.EventTime,
+				IsMouse = false
+			};
+
+			if (count >= 4)
+			{
+				// Four-finger pinch-to-zoom: calculate centroid and average spread
+				float cx = 0, cy = 0;
+				for (var i = 0; i < count; i++)
 				{
-					var pid = e.GetPointerId(i);
-					if (pid == primaryPointerId || pid == secondaryPointerId)
-					{
-						pending.Enqueue(new PendingInput
-						{
-							Action = action,
-							X = e.GetX(i),
-							Y = e.GetY(i),
-							PointerId = pid,
-							TimestampMs = e.EventTime
-						});
-					}
+					cx += e.GetX(i);
+					cy += e.GetY(i);
 				}
 
-				// Detect pinch zoom when two fingers are down.
-				if (primaryPointerId >= 0 && secondaryPointerId >= 0 && e.PointerCount >= 2)
-				{
-					var i0 = e.FindPointerIndex(primaryPointerId);
-					var i1 = e.FindPointerIndex(secondaryPointerId);
-					if (i0 >= 0 && i1 >= 0)
-					{
-						var dx = e.GetX(i0) - e.GetX(i1);
-						var dy = e.GetY(i0) - e.GetY(i1);
-						var dist = (float)Math.Sqrt(dx * dx + dy * dy);
-						if (lastPinchDist > 0)
-						{
-							var delta = (int)(dist - lastPinchDist);
-							if (Math.Abs(delta) > 2)
-							{
-								pending.Enqueue(new PendingInput
-								{
-									Action = MotionEventActions.Scroll,
-									X = (e.GetX(i0) + e.GetX(i1)) / 2,
-									Y = (e.GetY(i0) + e.GetY(i1)) / 2,
-									PointerId = -1,
-									TimestampMs = e.EventTime
-								});
-								// Store the delta in the Y field via a side channel — we'll read it in PumpInput.
-								pinchDelta = delta;
-							}
-						}
+				cx /= count;
+				cy /= count;
 
-						lastPinchDist = dist;
-					}
+				float avgDist = 0;
+				for (var i = 0; i < count; i++)
+				{
+					var dx = e.GetX(i) - cx;
+					var dy = e.GetY(i) - cy;
+					avgDist += MathF.Sqrt(dx * dx + dy * dy);
 				}
+
+				avgDist /= count;
+
+				pi.X = cx;
+				pi.Y = cy;
+				pi.X2 = avgDist;
 			}
 			else
 			{
-				pending.Enqueue(new PendingInput
+				pi.X = e.GetX(0);
+				pi.Y = e.GetY(0);
+				if (count >= 2)
 				{
-					Action = action,
-					X = e.GetX(index),
-					Y = e.GetY(index),
-					PointerId = e.GetPointerId(index),
-					TimestampMs = e.EventTime
-				});
+					pi.X2 = e.GetX(1);
+					pi.Y2 = e.GetY(1);
+				}
 			}
+
+			pending.Enqueue(pi);
 		}
 
-		// Hardware-mouse / trackball events arrive on a separate callback (OnGenericMotionEvent)
-		// because Android does not deliver mouse motion through OnTouchEvent. We route them here
-		// with IsMouse=true so PumpInput can bypass the touch long-press timer and map ButtonState
-		// directly to instant MouseButton Down/Up events.
 		public void EnqueueMouse(MotionEvent e, Size windowSize)
 		{
 			var action = e.ActionMasked;
@@ -161,8 +140,6 @@ namespace OpenRA.Platforms.Android
 
 			if (action == MotionEventActions.Scroll)
 			{
-				// Scroll-wheel delta. Per the Android MotionEvent docs, ACTION_SCROLL reports
-				// the scroll offset in AXIS_VSCROLL (9) / AXIS_HSCROLL (10), not the relative axes.
 				var dy = (int)(e.GetAxisValue(Axis.Vscroll) * -10);
 				var dx = (int)(e.GetAxisValue(Axis.Hscroll) * 10);
 				pending.Enqueue(new PendingInput
@@ -192,8 +169,6 @@ namespace OpenRA.Platforms.Android
 			}
 		}
 
-		int pinchDelta;
-
 		public void PumpInput(IInputHandler inputHandler, Size windowSize, Size surfaceSize, float scale)
 		{
 			var scaleX = (surfaceSize.Width > 0 && windowSize.Width > 0) ? (float)windowSize.Width / surfaceSize.Width : 1f;
@@ -209,128 +184,172 @@ namespace OpenRA.Platforms.Android
 					continue;
 				}
 
+				var pos2 = p.PointerCount >= 2 ? new int2((int)(p.X2 * scaleX), (int)(p.Y2 * scaleY)) : int2.Zero;
+
 				switch (p.Action)
 				{
 					case MotionEventActions.Down:
-						primaryPointerId = p.PointerId;
+						ignoreTouchesUntilAllUp = false;
 						primaryDownPos = pos;
-						primaryDownTimer = Stopwatch.StartNew();
-						longPressFired = false;
-						var tapCount = MultiTapDetection.DetectFromMouse(0, pos);
-						inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, pos, int2.Zero, Modifiers.None, tapCount));
+						primaryLastPos = pos;
+						primaryDownTimeMs = p.TimestampMs;
+						touchState = TouchGestureState.PotentialTap;
 						break;
 
 					case MotionEventActions.PointerDown:
-						if (secondaryPointerId < 0)
-						{
-							secondaryPointerId = p.PointerId;
-							lastPinchDist = 0;
+						if (ignoreTouchesUntilAllUp)
+							break;
 
-							// If the primary finger is down, start a right-button drag (map pan).
-							// Release the left button first so we don't hold Left+Right simultaneously
-							// (which would draw a giant selection box instead of just panning).
-							if (primaryPointerId >= 0 && !longPressFired)
-							{
-								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, 1));
-								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
-							}
+						if (p.PointerCount >= 4)
+						{
+							if (touchState == TouchGestureState.Panning)
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, primaryLastPos, int2.Zero, Modifiers.None, 1));
+							else if (touchState == TouchGestureState.BoxSelecting)
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 1));
+
+							touchState = TouchGestureState.Pinching;
+							lastPinchRadius = p.X2 * scaleX;
+						}
+						else if (p.PointerCount == 2 || p.PointerCount == 3)
+						{
+							if (touchState == TouchGestureState.Panning)
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, primaryLastPos, int2.Zero, Modifiers.None, 1));
+
+							touchState = TouchGestureState.BoxSelecting;
+							boxStartPos = touchState == TouchGestureState.Panning ? primaryLastPos : primaryDownPos;
+							boxLastPos = pos2;
+
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, boxStartPos, int2.Zero, Modifiers.None, 1));
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 0));
 						}
 
 						break;
 
 					case MotionEventActions.Move:
-						if (p.PointerId == primaryPointerId)
+						if (ignoreTouchesUntilAllUp)
+							break;
+
+						if (p.PointerCount >= 4)
 						{
-							// Check for long-press (right-click) if the finger hasn't moved much.
-							if (!longPressFired && primaryDownTimer != null && primaryDownTimer.ElapsedMilliseconds > LongPressMs)
+							var currentRadius = p.X2 * scaleX;
+							if (touchState != TouchGestureState.Pinching)
 							{
-								var moved = (pos - primaryDownPos).Length;
-								if (moved < TouchSlopPx)
-								{
-									longPressFired = true;
-									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, 1));
-									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
-								}
+								if (touchState == TouchGestureState.Panning)
+									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, primaryLastPos, int2.Zero, Modifiers.None, 1));
+								else if (touchState == TouchGestureState.BoxSelecting)
+									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 1));
+
+								touchState = TouchGestureState.Pinching;
+								lastPinchRadius = currentRadius;
 							}
 							else
 							{
-								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.Left, pos, int2.Zero, Modifiers.None, 0));
+								var delta = (int)(currentRadius - lastPinchRadius);
+								if (Math.Abs(delta) >= 3)
+								{
+									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Scroll, MouseButton.None, pos, new int2(0, delta), Modifiers.Ctrl, 0));
+									lastPinchRadius = currentRadius;
+								}
 							}
 						}
-						else if (p.PointerId == secondaryPointerId && primaryPointerId >= 0)
+						else if (p.PointerCount == 2 || p.PointerCount == 3)
 						{
-							// Two-finger pan: move with right button.
-							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.Right, pos, int2.Zero, Modifiers.None, 0));
+							if (touchState == TouchGestureState.BoxSelecting)
+							{
+								boxLastPos = pos2;
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 0));
+							}
+						}
+						else if (p.PointerCount == 1)
+						{
+							if (touchState == TouchGestureState.PotentialTap)
+							{
+								if ((pos - primaryDownPos).Length > TouchSlopPx)
+								{
+									touchState = TouchGestureState.Panning;
+									// Synchronize Viewport.LastMousePos to primaryDownPos FIRST to eliminate map jump!
+									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.None, primaryDownPos, int2.Zero, Modifiers.None, 0));
+									// Initiate standard scroll via Right Down
+									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Right, primaryDownPos, int2.Zero, Modifiers.None, 1));
+									// Begin continuous scroll to current finger pos
+									inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.Right, pos, int2.Zero, Modifiers.None, 0));
+									primaryLastPos = pos;
+								}
+							}
+							else if (touchState == TouchGestureState.Panning)
+							{
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.Right, pos, int2.Zero, Modifiers.None, 0));
+								primaryLastPos = pos;
+							}
 						}
 
 						break;
 
 					case MotionEventActions.PointerUp:
-						if (p.PointerId == secondaryPointerId)
+						if (touchState == TouchGestureState.BoxSelecting)
 						{
-							// End right-button drag.
-							if (primaryPointerId >= 0 && !longPressFired)
-								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
-							secondaryPointerId = -1;
-							lastPinchDist = 0;
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 1));
+							touchState = TouchGestureState.None;
+							ignoreTouchesUntilAllUp = true;
+						}
+						else if (touchState == TouchGestureState.Pinching)
+						{
+							touchState = TouchGestureState.None;
+							ignoreTouchesUntilAllUp = true;
 						}
 
 						break;
 
 					case MotionEventActions.Up:
-						if (longPressFired)
+						var elapsedMs = p.TimestampMs - primaryDownTimeMs;
+						var moveDist = (pos - primaryDownPos).Length;
+
+						if (!ignoreTouchesUntilAllUp && touchState == TouchGestureState.PotentialTap)
 						{
-							// The long-press already sent a right-click Down; send the matching Up.
+							// Only fire a click if it was an intentional, short tap with minimal movement
+							if (moveDist <= MaxTapDistancePx && elapsedMs <= MaxTapDurationMs)
+							{
+								var tapCount = MultiTapDetection.DetectFromMouse(0, primaryDownPos);
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, primaryDownPos, int2.Zero, Modifiers.None, tapCount));
+								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, primaryDownPos, int2.Zero, Modifiers.None, tapCount));
+							}
+						}
+						else if (touchState == TouchGestureState.Panning)
+						{
 							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
 						}
-						else
+						else if (touchState == TouchGestureState.BoxSelecting)
 						{
-							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, MultiTapDetection.InfoFromMouse(0)));
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 1));
 						}
 
-						primaryPointerId = -1;
-						primaryDownTimer = null;
-						longPressFired = false;
+						touchState = TouchGestureState.None;
+						ignoreTouchesUntilAllUp = false;
+
+						// Send a neutral cursor move to screen center so edge scrolling does not linger after lifting finger
+						inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.None, new int2(windowSize.Width / 2, windowSize.Height / 2), int2.Zero, Modifiers.None, 0));
 						break;
 
 					case MotionEventActions.Cancel:
-						// The system aborted the gesture (e.g. an incoming call or the OS
-						// intercepting the touch). Release any held buttons and reset state
-						// so we don't leave the engine thinking a button is permanently down.
-						if (primaryPointerId >= 0 && !longPressFired)
-							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, 1));
-						else if (primaryPointerId >= 0 && longPressFired)
+						if (touchState == TouchGestureState.Panning)
 							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
-						if (secondaryPointerId >= 0 && primaryPointerId >= 0 && !longPressFired)
-							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
-						primaryPointerId = -1;
-						secondaryPointerId = -1;
-						primaryDownTimer = null;
-						longPressFired = false;
-						lastMouseButtonState = 0;
-						break;
+						else if (touchState == TouchGestureState.BoxSelecting)
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, boxLastPos, int2.Zero, Modifiers.None, 1));
 
-					case MotionEventActions.Scroll:
-						// Pinch-to-zoom: synthesize a scroll event. The zoom modifier (Ctrl) is needed
-						// by ViewportControllerWidget, so we set it to make zoom work without a keyboard.
-						inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Scroll, MouseButton.None, pos, new int2(0, pinchDelta), Modifiers.Ctrl, 0));
-						pinchDelta = 0;
+						touchState = TouchGestureState.None;
+						ignoreTouchesUntilAllUp = false;
+						inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Move, MouseButton.None, new int2(windowSize.Width / 2, windowSize.Height / 2), int2.Zero, Modifiers.None, 0));
 						break;
 				}
 			}
 		}
 
-		// Translate a hardware-mouse MotionEvent into OpenRA MouseInput events.
-		// Android reports button changes as bitmask diffs between consecutive events, so we
-		// diff ButtonState to emit exact Down/Up transitions for Left/Right/Middle and a Move
-		// with the current cursor position (for dragging while a button is held).
 		void HandleMouse(IInputHandler inputHandler, in PendingInput p, int2 pos)
 		{
 			lastMousePos = pos;
 
 			if (p.Action == MotionEventActions.Scroll)
 			{
-				// Scroll wheel → Scroll event. Ctrl modifier enables zoom in ViewportControllerWidget.
 				inputHandler.OnMouseInput(new MouseInput(
 					MouseInputEvent.Scroll, MouseButton.None, pos,
 					new int2(0, p.ScrollDelta), Modifiers.Ctrl, 0));
@@ -341,7 +360,11 @@ namespace OpenRA.Platforms.Android
 			var prev = lastMouseButtonState;
 			var curr = p.ButtonState;
 
-			// Fire Down for buttons newly pressed since the last event.
+			// If Android reports ACTION_DOWN with ButtonState 0, fallback to primary (left) button
+			if (p.Action == MotionEventActions.Down && curr == 0)
+				curr = MouseBtnPrimary;
+
+			// Fire Down for buttons newly pressed
 			if ((curr & MouseBtnPrimary) != 0 && (prev & MouseBtnPrimary) == 0)
 			{
 				var downTapCount = MultiTapDetection.DetectFromMouse(0, pos);
@@ -358,7 +381,7 @@ namespace OpenRA.Platforms.Android
 				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Middle, pos, int2.Zero, Modifiers.None, 1));
 			}
 
-			// Fire Up for buttons that were released.
+			// Fire Up for buttons that were released
 			if ((prev & MouseBtnPrimary) != 0 && (curr & MouseBtnPrimary) == 0)
 			{
 				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, MultiTapDetection.InfoFromMouse(0)));
@@ -374,9 +397,13 @@ namespace OpenRA.Platforms.Android
 				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Middle, pos, int2.Zero, Modifiers.None, 1));
 			}
 
-			// Emit a Move with the currently-held button(s) so drag operations (select box,
-			// right-drag pan) continue to work while the mouse moves. Move with no button held
-			// just updates the cursor position.
+			// If ACTION_UP arrives and previous state had no flags recorded, ensure Left Up is fired
+			if (p.Action == MotionEventActions.Up && prev == 0)
+			{
+				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, MultiTapDetection.InfoFromMouse(0)));
+			}
+
+			// Determine held button for dragging
 			var heldButton = MouseButton.None;
 			var tapCount = 0;
 			if ((curr & MouseBtnPrimary) != 0)
@@ -389,9 +416,7 @@ namespace OpenRA.Platforms.Android
 			if (heldButton == MouseButton.Left)
 				tapCount = MultiTapDetection.InfoFromMouse(0);
 
-			// Only emit a move on HOVER_MOVE / MOVE actions (not on pure press/release, where
-			// the Down/Up events above are sufficient and a redundant Move can misposition the
-			// selection drag origin).
+			// Forward hover and drag moves (updates cursor position and drives edge scrolling)
 			if (p.Action == MotionEventActions.HoverMove || p.Action == MotionEventActions.Move)
 			{
 				inputHandler.OnMouseInput(new MouseInput(
