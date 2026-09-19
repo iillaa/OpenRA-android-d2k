@@ -35,12 +35,7 @@ namespace OpenRA.Platforms.Android
 			}
 			catch { /* may throw if already loaded — that's fine */ }
 
-			try
-			{
-				Java.Lang.JavaSystem.LoadLibrary("freetype6");
-			}
-			catch { /* may throw if already loaded — that's fine */ }
-
+	
 			try
 			{
 				var openalAssembly = Assembly.Load("OpenAL-CS");
@@ -59,23 +54,31 @@ namespace OpenRA.Platforms.Android
 			}
 			catch { }
 
-			// Also register a resolver for the current assembly (which contains FreeType imports)
+			// Also register a resolver for the current assembly (which contains FreeType imports).
+			// NativeLibrary.TryLoad with ApplicationDirectory does NOT search the APK native lib
+			// dir on .NET Android. We must resolve the absolute path via Android's ApplicationInfo.
 			try
 			{
+				var nativeLibDir = global::Android.App.Application.Context.ApplicationInfo.NativeLibraryDir;
+				var freetypePath = System.IO.Path.Combine(nativeLibDir, "libfreetype6.so");
+				global::Android.Util.Log.Info("OpenRA", $"FreeType resolver: nativeLibDir={nativeLibDir}, path={freetypePath}, exists={System.IO.File.Exists(freetypePath)}");
+
+				var freetypeHandle = NativeLibrary.Load(freetypePath);
+				global::Android.Util.Log.Info("OpenRA", $"FreeType pre-loaded via NativeLibrary.Load: handle={freetypeHandle}");
+
 				var thisAssembly = Assembly.GetExecutingAssembly();
 				NativeLibrary.SetDllImportResolver(thisAssembly, (libraryName, asm, searchPath) =>
 				{
 					if (libraryName == "freetype6")
-					{
-						foreach (var name in new[] { "freetype6", "libfreetype6.so", "libfreetype6" })
-							if (NativeLibrary.TryLoad(name, asm, DllImportSearchPath.ApplicationDirectory | DllImportSearchPath.UserDirectories, out var handle))
-								return handle;
-					}
+						return freetypeHandle;
 
 					return IntPtr.Zero;
 				});
 			}
-			catch { }
+			catch (Exception ex)
+			{
+				global::Android.Util.Log.Error("OpenRA", $"FreeType resolver setup failed: {ex}");
+			}
 		}
 
 		public static void SetWindow(AndroidPlatformWindow window) => Window = window;
