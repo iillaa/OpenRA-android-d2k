@@ -13,6 +13,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      DOTNET_CLI_TELEMETRY_OPS: 1
 
     steps:
       - name: Checkout
@@ -63,13 +64,11 @@ jobs:
           SDKMGR="${{ steps.sdk.outputs.sdkmgr }}"
           NDK_DIR=""
 
-          # Strategy 1: Check if NDK is already installed (by workload or pre-installed)
           if [ -d "$ANDROID_HOME/ndk" ]; then
             NDK_DIR=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)
             echo "Found existing NDK: $NDK_DIR"
           fi
 
-          # Strategy 2: Install via sdkmanager (try multiple NDK versions)
           if [ -z "$NDK_DIR" ] && [ -n "$SDKMGR" ]; then
             "$SDKMGR" --update 2>&1 | tail -1 || true
             for v in "27.0.11902897" "27.0.12179864" "26.1.10909125" "25.2.9519183"; do
@@ -83,15 +82,12 @@ jobs:
             done
           fi
 
-          # Strategy 3: Download NDK directly via curl (bypasses sdkmanager)
           if [ -z "$NDK_DIR" ]; then
             echo "Downloading NDK r26d directly..."
-            NDK_VERSION="r26d"
-            NDK_URL="https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
-            curl -fsSL -o /tmp/ndk.zip "$NDK_URL"
+            curl -fsSL -o /tmp/ndk.zip "https://dl.google.com/android/repository/android-ndk-r26d-linux.zip"
             mkdir -p "$ANDROID_HOME"
             unzip -q /tmp/ndk.zip -o -d "$ANDROID_HOME"
-            NDK_DIR="$ANDROID_HOME/android-ndk-${NDK_VERSION}"
+            NDK_DIR="$ANDROID_HOME/android-ndk-r26d"
             echo "Downloaded NDK to: $NDK_DIR"
           fi
 
@@ -105,20 +101,19 @@ jobs:
       - name: Verify native libraries
         run: |
           ls -lh OpenRA.Android/jniLibs/arm64-v8a/
-          file OpenRA.Android/jniLibs/arm64-v8a/*.so
 
       - name: Build APK
         run: |
-          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Release -f net9.0-android
+          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug -f net9.0-android
 
       - name: Find APK
         id: apk
         run: |
-          echo "=== Searching bin/Release for APKs ==="
-          find OpenRA.Android/bin/Release -name "*.apk" -o -name "*.aab" 2>/dev/null || true
-          echo "=== Full bin/Release tree ==="
-          find OpenRA.Android/bin/Release -type f 2>/dev/null | head -20 || true
-          APK=$(find OpenRA.Android/bin/Release -name "*.apk" 2>/dev/null | head -1)
+          echo "=== bin/Debug tree ==="
+          find OpenRA.Android/bin/Debug -name "*.apk" -o -name "*.aab" 2>/dev/null | head -10
+          echo "=== All .apk files in repo ==="
+          find . -name "*.apk" 2>/dev/null | head -10
+          APK=$(find OpenRA.Android/bin/Debug -name "*.apk" 2>/dev/null | head -1)
           echo "apk=$APK" >> $GITHUB_OUTPUT
           echo "apk=$APK"
 
