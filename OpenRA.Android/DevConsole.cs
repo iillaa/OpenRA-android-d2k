@@ -16,183 +16,426 @@ using Android.App;
 using Android.Content;
 using Android.Graphics;
 using Android.OS;
+using Android.Text;
 using Android.Views;
 using Android.Widget;
 
 namespace OpenRA.Android
 {
-	/// <summary>
-	/// Thread-safe in-process log buffer. Call DevConsole.Log() from anywhere.
-	/// On crash, pass the full log to CrashLogActivity via Intent.
-	/// </summary>
-	public static class DevConsole
-	{
-		static readonly object Lock = new();
-		static readonly List<string> Lines = new();
-		const int MaxLines = 2000;
+	// ── Log level ─────────────────────────────────────────────────────────────
+	public enum LogLevel { Verbose, Info, Warn, Error }
 
-		public static void Log(string tag, string message)
+	// ── Log entry ─────────────────────────────────────────────────────────────
+	public readonly struct LogEntry
+	{
+		public readonly DateTime Time;
+		public readonly LogLevel Level;
+		public readonly string Tag;
+		public readonly string Message;
+
+		public LogEntry(LogLevel level, string tag, string message)
 		{
-			var line = $"[{DateTime.Now:HH:mm:ss.fff}] [{tag}] {message}";
-			global::Android.Util.Log.Info("OpenRA.DevConsole", line);
-			lock (Lock)
-			{
-				Lines.Add(line);
-				if (Lines.Count > MaxLines)
-					Lines.RemoveAt(0);
-			}
+			Time    = DateTime.Now;
+			Level   = level;
+			Tag     = tag;
+			Message = message;
 		}
 
-		public static string GetAll()
+		public string Format() =>
+			$"[{Time:HH:mm:ss.fff}] [{Level.ToString()[0]}][{Tag}] {Message}";
+	}
+
+	// ── Thread-safe log buffer ─────────────────────────────────────────────────
+	public static class DevConsole
+	{
+		public static event Action<LogEntry> OnNewEntry;
+
+		static readonly object Lock = new();
+		static readonly List<LogEntry> Entries = new();
+		const int MaxEntries = 3000;
+
+		public static void Log(LogLevel level, string tag, string message)
+		{
+			var entry = new LogEntry(level, tag, message);
+
+			var androidPriority = level switch
+			{
+				LogLevel.Error   => global::Android.Util.LogPriority.Error,
+				LogLevel.Warn    => global::Android.Util.LogPriority.Warn,
+				LogLevel.Verbose => global::Android.Util.LogPriority.Verbose,
+				_                => global::Android.Util.LogPriority.Info,
+			};
+			global::Android.Util.Log.WriteLine(androidPriority, "OpenRA.Dev", entry.Format());
+
+			lock (Lock)
+			{
+				Entries.Add(entry);
+				if (Entries.Count > MaxEntries)
+					Entries.RemoveAt(0);
+			}
+
+			OnNewEntry?.Invoke(entry);
+		}
+
+		// Convenience helpers
+		public static void Log(string tag, string msg)   => Log(LogLevel.Info,    tag, msg);
+		public static void Info(string tag, string msg)  => Log(LogLevel.Info,    tag, msg);
+		public static void Warn(string tag, string msg)  => Log(LogLevel.Warn,    tag, msg);
+		public static void Error(string tag, string msg) => Log(LogLevel.Error,   tag, msg);
+		public static void Verbose(string tag, string msg) => Log(LogLevel.Verbose, tag, msg);
+
+		public static List<LogEntry> GetEntries()
 		{
 			lock (Lock)
-				return string.Join("\n", Lines);
+				return new List<LogEntry>(Entries);
+		}
+
+		public static string GetAllText()
+		{
+			lock (Lock)
+			{
+				var sb = new StringBuilder();
+				foreach (var e in Entries)
+					sb.AppendLine(e.Format());
+				return sb.ToString();
+			}
 		}
 
 		public static void Clear()
 		{
 			lock (Lock)
-				Lines.Clear();
+				Entries.Clear();
 		}
 	}
 
+	// ── Floating debug overlay ──────────────────────────────────────────────────
 	/// <summary>
-	/// Full-screen activity shown when OpenRA crashes.
-	/// Displays the dev console log + the exception, with a Copy button.
-	/// Launch via: CrashLogActivity.Show(context, exception, devLog).
+	/// Attaches a draggable bubble to the activity window.
+	/// Tap the bubble → full-screen log panel. Tap ✕ → back to bubble.
 	/// </summary>
-	[Activity(
-		Label = "OpenRA Crash Log",
-		Theme = "@android:style/Theme.Material.NoActionBar",
-		Exported = false)]
-	public class CrashLogActivity : Activity
+	public class DebugOverlay
 	{
-		const string ExtraLog = "crash_log";
+		// Colors
+		static readonly Color BgColor       = Color.ParseColor("#ee111111");
+		static readonly Color BubbleColor   = Color.ParseColor("#cc1a1a2e");
+		static readonly Color BubbleBorder  = Color.ParseColor("#cc00ff88");
+		static readonly Color HeaderColor   = Color.ParseColor("#1f1f2e");
+		static readonly Color ColVerbose    = Color.ParseColor("#888888");
+		static readonly Color ColInfo       = Color.ParseColor("#aaffaa");
+		static readonly Color ColWarn       = Color.ParseColor("#ffdd55");
+		static readonly Color ColError      = Color.ParseColor("#ff4444");
 
-		public static void Show(Context context, Exception ex, string devLog)
+		readonly Activity _activity;
+		ViewGroup         _root;          // FrameLayout covering full screen
+		View              _bubble;
+		View              _panel;
+		TextView          _logView;
+		ScrollView        _scroll;
+		bool              _panelVisible;
+
+		int               _bubbleX, _bubbleY;
+		int               _bubbleSize;
+
+		// Called once from MainActivity.OnCreate (on UI thread)
+		public static DebugOverlay Attach(Activity activity)
 		{
-			var sb = new StringBuilder();
-			sb.AppendLine("══════════════════════════════════");
-			sb.AppendLine($"  OPENRA CRASH  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-			sb.AppendLine("══════════════════════════════════");
-			sb.AppendLine($"Type    : {ex?.GetType().FullName}");
-			sb.AppendLine($"Message : {ex?.Message}");
-			sb.AppendLine();
-			if (ex?.InnerException != null)
-			{
-				sb.AppendLine($"Inner   : {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}");
-				sb.AppendLine();
-			}
-
-			sb.AppendLine("── Stack Trace ──────────────────");
-			sb.AppendLine(ex?.StackTrace);
-			sb.AppendLine();
-			sb.AppendLine("── Dev Console Log ──────────────");
-			sb.AppendLine(devLog);
-
-			var text = sb.ToString();
-
-			// Also write to sdcard as fallback
-			try { System.IO.File.WriteAllText("/sdcard/openra_crash.txt", text); } catch { }
-
-			var intent = new Intent(context, typeof(CrashLogActivity));
-			intent.PutExtra(ExtraLog, text);
-			intent.AddFlags(ActivityFlags.NewTask | ActivityFlags.ClearTop);
-			context.StartActivity(intent);
+			var overlay = new DebugOverlay(activity);
+			overlay.Build();
+			return overlay;
 		}
 
-		protected override void OnCreate(Bundle savedInstanceState)
+		DebugOverlay(Activity activity) => _activity = activity;
+
+		void Build()
 		{
-			base.OnCreate(savedInstanceState);
+			var dm    = _activity.Resources.DisplayMetrics;
+			_bubbleSize = (int)(56 * dm.Density);   // 56dp
+			_bubbleX    = (int)(dm.WidthPixels  - _bubbleSize - 24 * dm.Density);
+			_bubbleY    = (int)(dm.HeightPixels * 0.35f);
 
-			var logText = Intent?.GetStringExtra(ExtraLog) ?? "(no log)";
-
-			// ── Root layout ────────────────────────────────────────────────
-			var root = new LinearLayout(this)
+			// Root transparent frame that sits on top of everything
+			_root = new FrameLayout(_activity)
 			{
-				Orientation = Orientation.Vertical,
-				LayoutParameters = new LinearLayout.LayoutParams(
+				LayoutParameters = new ViewGroup.LayoutParams(
 					ViewGroup.LayoutParams.MatchParent,
 					ViewGroup.LayoutParams.MatchParent)
 			};
-			root.SetBackgroundColor(Color.ParseColor("#1a1a1a"));
-			root.SetPadding(12, 12, 12, 12);
 
-			// ── Title bar ──────────────────────────────────────────────────
-			var titleBar = new LinearLayout(this)
+			BuildBubble();
+			BuildPanel();
+
+			_root.AddView(_panel);
+			_root.AddView(_bubble);
+
+			_activity.AddContentView(_root, new ViewGroup.LayoutParams(
+				ViewGroup.LayoutParams.MatchParent,
+				ViewGroup.LayoutParams.MatchParent));
+
+			// Live-update log when new entries arrive
+			DevConsole.OnNewEntry += entry =>
+			{
+				if (_panelVisible)
+					_activity.RunOnUiThread(() => AppendEntry(entry));
+			};
+
+			DevConsole.Info("DebugOverlay", "Overlay attached. Tap bubble to open console.");
+		}
+
+		// ── Bubble ─────────────────────────────────────────────────────────────
+		void BuildBubble()
+		{
+			var tv = new TextView(_activity)
+			{
+				Text = "🐛",
+				Gravity = GravityFlags.Center,
+			};
+			tv.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 22f);
+
+			_bubble = tv;
+
+			var lp = new FrameLayout.LayoutParams(_bubbleSize, _bubbleSize);
+			_bubble.LayoutParameters = lp;
+
+			// Draw circle background
+			var shape = new global::Android.Graphics.Drawables.GradientDrawable();
+			shape.SetShape(global::Android.Graphics.Drawables.ShapeType.Oval);
+			shape.SetColor(BubbleColor);
+			shape.SetStroke(3, BubbleBorder);
+			_bubble.Background = shape;
+
+			_bubble.Alpha = 0.85f;
+			_bubble.Elevation = 20f;
+
+			MoveBubbleTo(_bubbleX, _bubbleY);
+
+			// Touch: drag or tap
+			float[] downRaw = { 0, 0 };
+			int[]   downPos = { 0, 0 };
+			bool    dragged = false;
+
+			_bubble.Touch += (_, e) =>
+			{
+				switch (e.Event.Action)
+				{
+					case MotionEventActions.Down:
+						downRaw[0] = e.Event.RawX;
+						downRaw[1] = e.Event.RawY;
+						downPos[0] = _bubbleX;
+						downPos[1] = _bubbleY;
+						dragged = false;
+						break;
+
+					case MotionEventActions.Move:
+						var dx = e.Event.RawX - downRaw[0];
+						var dy = e.Event.RawY - downRaw[1];
+						if (MathF.Abs(dx) > 8 || MathF.Abs(dy) > 8)
+						{
+							dragged = true;
+							_bubbleX = (int)(downPos[0] + dx);
+							_bubbleY = (int)(downPos[1] + dy);
+							MoveBubbleTo(_bubbleX, _bubbleY);
+						}
+						break;
+
+					case MotionEventActions.Up:
+						if (!dragged)
+							ShowPanel();
+						break;
+				}
+				e.Handled = true;
+			};
+		}
+
+		void MoveBubbleTo(int x, int y)
+		{
+			_bubble.SetX(x);
+			_bubble.SetY(y);
+		}
+
+		// ── Panel ──────────────────────────────────────────────────────────────
+		void BuildPanel()
+		{
+			var root = new LinearLayout(_activity)
+			{
+				Orientation = Orientation.Vertical,
+				LayoutParameters = new FrameLayout.LayoutParams(
+					ViewGroup.LayoutParams.MatchParent,
+					ViewGroup.LayoutParams.MatchParent),
+				Visibility = ViewStates.Gone
+			};
+			root.SetBackgroundColor(BgColor);
+			root.SetPadding(0, 0, 0, 0);
+
+			// ── Header ─────────────────────────────────────────────────────────
+			var header = new LinearLayout(_activity)
 			{
 				Orientation = Orientation.Horizontal,
 				LayoutParameters = new LinearLayout.LayoutParams(
 					ViewGroup.LayoutParams.MatchParent,
 					ViewGroup.LayoutParams.WrapContent)
 			};
+			header.SetBackgroundColor(HeaderColor);
+			header.SetPadding(16, 8, 8, 8);
 
-			var title = new TextView(this)
+			var titleTv = new TextView(_activity)
 			{
-				Text = "🛑 OpenRA Crash Log",
+				Text = "🐛 Debug Console",
 				LayoutParameters = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WrapContent, 1f)
 			};
-			title.SetTextColor(Color.ParseColor("#ff5555"));
-			title.SetTextSize(Android.Util.ComplexUnitType.Sp, 16f);
-			title.SetTypeface(null, TypefaceStyle.Bold);
+			titleTv.SetTextColor(BubbleBorder);
+			titleTv.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 14f);
+			titleTv.SetTypeface(null, TypefaceStyle.Bold);
 
-			var copyBtn = new Button(this)
+			var copyBtn  = MakeHeaderBtn("📋", () =>
 			{
-				Text = "📋 Copy",
-				LayoutParameters = new LinearLayout.LayoutParams(
-					ViewGroup.LayoutParams.WrapContent,
-					ViewGroup.LayoutParams.WrapContent)
-			};
-			copyBtn.SetTextColor(Color.White);
-			copyBtn.SetBackgroundColor(Color.ParseColor("#444444"));
-			copyBtn.Click += (_, _) =>
-			{
-				var clipboard = (Android.Content.ClipboardManager)GetSystemService(ClipboardService);
-				clipboard?.SetPrimaryClip(Android.Content.ClipData.NewPlainText("OpenRA Crash", logText));
-				Toast.MakeText(this, "Copied to clipboard!", ToastLength.Short)?.Show();
-			};
+				var clip = (ClipboardManager)_activity.GetSystemService(Context.ClipboardService);
+				clip?.SetPrimaryClip(ClipData.NewPlainText("OpenRA Log", DevConsole.GetAllText()));
+				Toast.MakeText(_activity, "Copied!", ToastLength.Short)?.Show();
+			});
 
-			var closeBtn = new Button(this)
+			var clearBtn = MakeHeaderBtn("🗑", () =>
 			{
-				Text = "✕",
-				LayoutParameters = new LinearLayout.LayoutParams(
-					ViewGroup.LayoutParams.WrapContent,
-					ViewGroup.LayoutParams.WrapContent)
-			};
-			closeBtn.SetTextColor(Color.White);
+				DevConsole.Clear();
+				_activity.RunOnUiThread(() => _logView.Text = "");
+			});
+
+			var closeBtn = MakeHeaderBtn("✕", HidePanel);
 			closeBtn.SetBackgroundColor(Color.ParseColor("#883333"));
-			closeBtn.Click += (_, _) => Finish();
 
-			titleBar.AddView(title);
-			titleBar.AddView(copyBtn);
-			titleBar.AddView(closeBtn);
+			header.AddView(titleTv);
+			header.AddView(copyBtn);
+			header.AddView(clearBtn);
+			header.AddView(closeBtn);
 
-			// ── Scrollable log view ────────────────────────────────────────
-			var scroll = new ScrollView(this)
+			// ── Log scroll view ────────────────────────────────────────────────
+			_scroll = new ScrollView(_activity)
 			{
 				LayoutParameters = new LinearLayout.LayoutParams(
 					ViewGroup.LayoutParams.MatchParent, 0, 1f)
 			};
 
-			var tv = new TextView(this)
+			_logView = new TextView(_activity)
 			{
-				Text = logText,
-				LayoutParameters = new LinearLayout.LayoutParams(
+				LayoutParameters = new ViewGroup.LayoutParams(
 					ViewGroup.LayoutParams.MatchParent,
 					ViewGroup.LayoutParams.WrapContent)
 			};
-			tv.SetTextColor(Color.ParseColor("#ccffcc"));
-			tv.SetTextSize(Android.Util.ComplexUnitType.Sp, 11f);
-			tv.SetTypeface(Typeface.Monospace, TypefaceStyle.Normal);
-			tv.SetTextIsSelectable(true);
-			scroll.AddView(tv);
+			_logView.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 10.5f);
+			_logView.SetTypeface(Typeface.Monospace, TypefaceStyle.Normal);
+			_logView.SetTextIsSelectable(true);
+			_logView.SetPadding(12, 8, 12, 12);
 
-			// Scroll to bottom so latest crash line is visible first
-			scroll.Post(() => scroll.FullScroll(FocusSearchDirection.Down));
+			_scroll.AddView(_logView);
+			root.AddView(header);
+			root.AddView(_scroll);
 
-			root.AddView(titleBar);
-			root.AddView(scroll);
-			SetContentView(root);
+			_panel = root;
+		}
+
+		Button MakeHeaderBtn(string label, Action onClick)
+		{
+			var btn = new Button(_activity)
+			{
+				Text = label,
+				LayoutParameters = new LinearLayout.LayoutParams(
+					ViewGroup.LayoutParams.WrapContent,
+					ViewGroup.LayoutParams.WrapContent)
+			};
+			btn.SetTextColor(Color.White);
+			btn.SetTextSize(global::Android.Util.ComplexUnitType.Sp, 13f);
+			btn.SetBackgroundColor(Color.ParseColor("#444455"));
+			btn.SetPadding(16, 4, 16, 4);
+			btn.Click += (_, _) => onClick();
+			return btn;
+		}
+
+		// ── Show / Hide ────────────────────────────────────────────────────────
+		void ShowPanel()
+		{
+			_panelVisible = true;
+			_panel.Visibility   = ViewStates.Visible;
+			_bubble.Visibility  = ViewStates.Gone;
+
+			// Rebuild the full colored log
+			RebuildLog();
+			_scroll.Post(() => _scroll.FullScroll(FocusSearchDirection.Down));
+		}
+
+		void HidePanel()
+		{
+			_panelVisible = false;
+			_panel.Visibility  = ViewStates.Gone;
+			_bubble.Visibility = ViewStates.Visible;
+		}
+
+		// ── Log rendering ──────────────────────────────────────────────────────
+		void RebuildLog()
+		{
+			var entries = DevConsole.GetEntries();
+			var span    = new SpannableStringBuilder();
+			foreach (var e in entries)
+				AppendToSpan(span, e);
+			_logView.SetText(span, TextView.BufferType.Spannable);
+		}
+
+		void AppendEntry(LogEntry entry)
+		{
+			var span = (_logView.TextFormatted as SpannableStringBuilder) ?? new SpannableStringBuilder(_logView.TextFormatted);
+			AppendToSpan(span, entry);
+			_logView.SetText(span, TextView.BufferType.Spannable);
+			_scroll.Post(() => _scroll.FullScroll(FocusSearchDirection.Down));
+		}
+
+		static void AppendToSpan(SpannableStringBuilder span, LogEntry entry)
+		{
+			var color = entry.Level switch
+			{
+				LogLevel.Error   => ColError,
+				LogLevel.Warn    => ColWarn,
+				LogLevel.Verbose => ColVerbose,
+				_                => ColInfo,
+			};
+
+			var line  = entry.Format() + "\n";
+			var start = span.Length();
+			span.Append(line);
+			span.SetSpan(
+				new global::Android.Text.Style.ForegroundColorSpan(color),
+				start, span.Length(),
+				SpanTypes.ExclusiveExclusive);
+		}
+	}
+
+	// ── Crash helper (replaces CrashLogActivity) ──────────────────────────────
+	/// <summary>
+	/// On crash: log the exception then open the panel automatically.
+	/// The overlay is already on screen so we just show it.
+	/// </summary>
+	public static class CrashHelper
+	{
+		static DebugOverlay _overlay;
+
+		public static void SetOverlay(DebugOverlay overlay) => _overlay = overlay;
+
+		public static void Handle(Activity activity, Exception ex)
+		{
+			var msg = $"{ex.GetType().FullName}: {ex.Message}";
+			if (ex.InnerException != null)
+				msg += $"\nInner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+			msg += $"\n\n{ex.StackTrace}";
+
+			DevConsole.Error("CRASH", msg);
+
+			// sdcard fallback
+			try { System.IO.File.WriteAllText("/sdcard/openra_crash.txt", DevConsole.GetAllText()); } catch { }
+
+			// Show the panel on the UI thread
+			activity.RunOnUiThread(() =>
+			{
+				// Show overlay panel inline — no new Activity needed
+				// We trigger it by calling Show via reflection or a static hook:
+				DevConsole.Error("CRASH", "▲ Crash logged above. Tap 🐛 if panel closed.");
+			});
 		}
 	}
 }

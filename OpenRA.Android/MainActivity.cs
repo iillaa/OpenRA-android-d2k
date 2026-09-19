@@ -66,6 +66,10 @@ namespace OpenRA.Android
 			window.KeyboardDrainAction = ih => surfaceView.DrainKeyboardInput(ih);
 			SetContentView(surfaceView);
 
+			// Attach floating debug bubble overlay (draggable, tap to open full log panel)
+			var overlay = DebugOverlay.Attach(this);
+			CrashHelper.SetOverlay(overlay);
+
 			// Start the engine loop immediately. The window's WaitForSurfaceAndInitializeGl handles
 			// the Android surface churn (create->destroy->create during layout) by retrying.
 			StartEngineOnce();
@@ -139,15 +143,14 @@ namespace OpenRA.Android
 			{
 				try
 				{
-					DevConsole.Log("MainActivity", "Game.InitializeAndRun starting...");
+					DevConsole.Info("MainActivity", "Game.InitializeAndRun starting...");
 					Game.InitializeAndRun(args);
-					DevConsole.Log("MainActivity", "Game.InitializeAndRun returned normally.");
+					DevConsole.Info("MainActivity", "Game.InitializeAndRun returned normally.");
 				}
 				catch (Exception e)
 				{
 					global::Android.Util.Log.Error(Tag, $"OpenRA crashed: {e}");
-					DevConsole.Log("CRASH", $"{e.GetType().FullName}: {e.Message}\n{e.StackTrace}");
-					CrashLogActivity.Show(this, e, DevConsole.GetAll());
+					CrashHelper.Handle(this, e);
 				}
 			})
 			{ Name = "OpenRA Main", IsBackground = false }.Start();
