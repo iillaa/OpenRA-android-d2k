@@ -1,0 +1,132 @@
+name: Android (Dune 2000)
+
+on:
+  push:
+    branches: [android-native-port]
+  pull_request:
+    branches: [android-native-port]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-22.04
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install Android Workload
+        run: |
+          dotnet workload install android
+          dotnet workload restore
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Locate Android SDK
+        id: sdk
+        run: |
+          SDKMGR=""
+          for path in \
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_HOME/cmdline-tools/*/bin/sdkmanager" \
+            "$ANDROID_HOME/tools/bin/sdkmanager" \
+            "$ANDROID_HOME/embedded/tools/bin/sdkmanager" \
+            "$ANDROID_HOME/embedded/cmdline-tools/*/bin/sdkmanager"; do
+            if [ -f "$path" ]; then
+              SDKMGR="$(cd "$(dirname "$path")" && pwd)"
+              break
+            fi
+          done
+          echo "sdkmgr=$SDKMGR"
+          echo "sdkmgr=$SDKMGR" >> "$GITHUB_OUTPUT"
+
+      - name: Accept Android Licenses
+        run: |
+          if [ -n "${{ steps.sdk.outputs.sdkmgr }}" ]; then
+            yes | "${{ steps.sdk.outputs.sdkmgr }}/sdkmanager" --licenses 2>&1 | grep -iE "(accepted|license)" || true
+          fi
+
+      - name: Install NDK
+        run: |
+          SDKMGR="${{ steps.sdk.outputs.sdkmgr }}"
+          NDK_DIR=""
+
+          if [ -d "$ANDROID_HOME/ndk" ]; then
+            NDK_DIR=$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -1)
+            echo "Found existing NDK: $NDK_DIR"
+          fi
+
+          if [ -z "$NDK_DIR" ] && [ -n "$SDKMGR" ]; then
+            "$SDKMGR" --update 2>&1 | tail -1 || true
+            for v in "27.0.11902897" "27.0.12179864" "26.1.10909125" "25.2.9519183"; do
+              if "$SDKMGR" "ndk;${v}" 2>&1 | grep -qiE "error|fail"; then
+                echo "NDK $v not found, trying next..."
+              else
+                NDK_DIR="$ANDROID_HOME/ndk/${v}"
+                echo "Installed NDK $v: $NDK_DIR"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$NDK_DIR" ]; then
+            echo "Downloading NDK r26d directly..."
+            curl -fsSL -o /tmp/ndk.zip "https://dl.google.com/android/repository/android-ndk-r26d-linux.zip"
+            mkdir -p "$ANDROID_HOME"
+            unzip -q /tmp/ndk.zip -o -d "$ANDROID_HOME"
+            NDK_DIR="$ANDROID_HOME/android-ndk-r26d"
+            echo "Downloaded NDK to: $NDK_DIR"
+          fi
+
+          echo "NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "NDK_ROOT=$NDK_DIR"
+
+      - name: Build native libraries (arm64-v8a)
+        run: |
+          bash thirdparty/build-android-linux.sh "$NDK_ROOT"
+
+      - name: Verify native libraries
+        run: |
+          ls -lh OpenRA.Android/jniLibs/arm64-v8a/
+
+      - name: Build APK
+        run: |
+          dotnet build OpenRA.Android/OpenRA.Android.csproj -c Debug
+
+      - name: Find APK
+        id: apk
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== Full bin/ tree ==="
+          find OpenRA.Android/bin -type f \( -name "*.apk" -o -name "*.aab" \) 2>/dev/null | head -20
+          echo "=== Listing all files in OpenRA.Android/bin ==="
+          ls -laR OpenRA.Android/bin/ 2>/dev/null | tail -40 || echo "No bin/ dir"
+          echo "=== Searching whole repo ==="
+          find . -name "*.apk" 2>/dev/null | head -10
+          APK=$(find . -name "*-Signed.apk" 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find . -name "*.apk" 2>/dev/null | grep -v obj/ | head -1)
+          fi
+          echo "apk=$APK"
+          echo "apk=$APK" >> $GITHUB_OUTPUT
+
+      - name: Upload APK
+        if: steps.apk.outputs.apk != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenRA-Dune2000-debug
+          path: ${{ steps.apk.outputs.apk }}
+          if-no-files-found: warn

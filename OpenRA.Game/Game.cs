@@ -433,9 +433,11 @@ namespace OpenRA
 
 			// Android has its own compiled-in platform (OpenRA.Platforms.Android) and no on-disk
 			// platform DLL, so we skip the settings/configured defaults and target it directly.
+#pragma warning disable IDE0300
 			var platforms = OperatingSystem.IsAndroid()
 				? new[] { "Android", null }
 				: new[] { Settings.Game.Platform, "Default", null };
+#pragma warning restore IDE0300
 			foreach (var p in platforms)
 			{
 				if (p == null)
@@ -476,7 +478,9 @@ namespace OpenRA
 					.FirstOrDefault(t => t != null && typeof(IPlatform).IsAssignableFrom(t));
 
 				if (platformType == null)
-					throw new InvalidOperationException($"Platform dll must include exactly one IPlatform implementation: OpenRA.Platforms.{platformName}.{platformName}Platform not found.");
+					throw new InvalidOperationException(
+							"Platform dll must include exactly one IPlatform implementation: " +
+							$"OpenRA.Platforms.{platformName}.{platformName}Platform not found.");
 
 				return (IPlatform)platformType.GetConstructor(Type.EmptyTypes).Invoke(null);
 			}

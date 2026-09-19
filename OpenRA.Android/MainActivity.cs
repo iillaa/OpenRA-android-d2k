@@ -10,6 +10,7 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using Android.App;
@@ -28,7 +29,8 @@ using OpenRA.Platforms.Android;
 namespace OpenRA.Android
 {
 	[Activity(
-		Label = "OpenRA",
+		Label = "@string/app_name",
+		Icon = "@mipmap/ic_launcher",
 		MainLauncher = true,
 		Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen",
 		ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.KeyboardHidden | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout,
@@ -69,6 +71,44 @@ namespace OpenRA.Android
 			StartEngineOnce();
 		}
 
+		// Compute a tablet-aware default UI scale for the first launch. On high-DPI tablets the
+		// default 1.0 scale makes sidebars, radar and buttons tiny and hard to tap. We derive the
+		// scale from the screen density and only apply it when no settings.yaml exists yet (so the
+		// user's own preference always wins on subsequent runs).
+		float ComputeDefaultUIScale()
+		{
+			var metrics = Resources.DisplayMetrics;
+
+			if (metrics.DensityDpi <= 0)
+				return 1f;
+
+			var density = (float)metrics.DensityDpi / 160f;
+			var widthDp = metrics.WidthPixels / density;
+			var heightDp = metrics.HeightPixels / density;
+			var isTablet = Math.Min(widthDp, heightDp) >= 600;
+
+			if (!isTablet)
+				return 1f;
+
+			// Clamp to 1.5–2.5 so phones stay at 1.0 and tablets get a touch-friendly scale.
+			return Math.Clamp(density, 1.5f, 2.5f);
+		}
+
+		// Pause rendering and signal the engine when the app is backgrounded so it stops
+		// touching the EGL surface (prevents the black-screen-on-resume crash).
+		protected override void OnPause()
+		{
+			base.OnPause();
+			window?.SuspendRendering();
+		}
+
+		// Resume rendering when the app returns to the foreground.
+		protected override void OnResume()
+		{
+			base.OnResume();
+			window?.ResumeRendering();
+		}
+
 		// Called from the SurfaceCallback once the first stable surface is available.
 		internal void StartEngineOnce()
 		{
@@ -76,12 +116,24 @@ namespace OpenRA.Android
 				return;
 			engineStarted = true;
 
-			var args = new[]
+			// On first launch (no settings.yaml yet) inject a tablet-aware UI scale so the UI
+			// isn't tiny on high-DPI screens. On later runs the user's saved preference wins.
+			var settingsPath = Path.Combine(supportDir, "settings.yaml");
+			var argsList = new List<string>
 			{
 				$"Engine.EngineDir={engineDir}",
 				$"Engine.SupportDir={supportDir}",
-				"Game.Mod=ra"
+				"Game.Mod=d2k"
 			};
+
+			if (!File.Exists(settingsPath))
+			{
+				var uiScale = ComputeDefaultUIScale();
+				if (uiScale > 1f)
+					argsList.Add($"Graphics.UIScale={uiScale}");
+			}
+
+			var args = argsList.ToArray();
 
 			new Thread(() =>
 			{
@@ -191,6 +243,29 @@ namespace OpenRA.Android
 
 			public override bool OnTouchEvent(MotionEvent e)
 			{
+				window.EnqueueMotion(e);
+				return true;
+			}
+
+			// Hardware mouse / trackball motion is delivered here (not via OnTouchEvent).
+			// Detect mouse source and route to the dedicated mouse input path so left/right/
+			// middle clicks and hover movement are handled instantly with no long-press delay.
+			// Also request pointer capture (API 26+) so edge-panning isn't intercepted by
+			// Android's system gesture bars.
+			public override bool OnGenericMotionEvent(MotionEvent e)
+			{
+				if (e.IsFromSource(InputSourceType.Mouse))
+				{
+					// Request pointer capture (API 26+) so edge-panning isn't intercepted by
+					// Android's system gesture bars.
+					if ((int)global::Android.OS.Build.VERSION.SdkInt >= 26)
+						RequestPointerCapture();
+
+					window.EnqueueMouseMotion(e);
+					return true;
+				}
+
+				// Non-mouse generic motion (e.g. stylus) — fall back to the touch path.
 				window.EnqueueMotion(e);
 				return true;
 			}

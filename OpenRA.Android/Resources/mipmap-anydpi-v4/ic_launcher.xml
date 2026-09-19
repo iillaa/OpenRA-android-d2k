@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+	android:width="48dp"
+	android:height="48dp"
+	android:viewportWidth="48"
+	android:viewportHeight="48"
+	android:gravity="center">
+	<!-- Spice-orange shield background (fallback for API 24-25) -->
+	<path
+		android:fillColor="#FF6B0A"
+		android:pathData="M24,4 L40,10 L40,25 C40,36 33,43 24,45 C15,43 8,36 8,25 L8,10 Z" />
+	<!-- Atreides hawk silhouette (stylized) in blue -->
+	<path
+		android:fillColor="#0078D7"
+		android:pathData="M24,14 L30,21 L35,19 L32,25 L34,31 L24,27 L14,31 L16,25 L13,19 L18,21 Z" />
+</vector>

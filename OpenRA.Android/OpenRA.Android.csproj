@@ -5,7 +5,7 @@
 		<OutputType>Exe</OutputType>
 		<RootNamespace>OpenRA.Android</RootNamespace>
 		<Nullable>disable</Nullable>
-		<ApplicationId>net.openra.android</ApplicationId>
+		<ApplicationId>net.openra.dune2000</ApplicationId>
 		<ApplicationVersion>1</ApplicationVersion>
 		<ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
 		<AndroidPackageFormats>apk</AndroidPackageFormats>
@@ -49,12 +49,18 @@
 		<AndroidAsset Include="..\mods\ts-content\**\*.*" Link="assets\mods\ts-content\%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 
-	<!-- Native libraries built from source with the NDK (thirdparty/build-*-android.sh). These must
-	     live in the app project: AndroidNativeLibrary only propagates from an application project,
-	     not from a referenced library. -->
-	<ItemGroup>
-		<AndroidNativeLibrary Include="jniLibs\arm64-v8a\libfreetype6.so" />
-		<AndroidNativeLibrary Include="jniLibs\arm64-v8a\liblua51.so" />
-		<AndroidNativeLibrary Include="jniLibs\arm64-v8a\libsoft_oal.so" />
+	<!-- Native libraries built from source with the NDK (thirdparty/build-*-android.sh).
+	     These must live in the app project: AndroidNativeLibrary only propagates from an
+	     application project, not from a referenced library. The includes are conditional so
+	     that a from-source build still compiles when jniLibs is not yet populated (e.g.
+	     when CI builds the .so files first). -->
+	<ItemGroup Condition="Exists('jniLibs\arm64-v8a\libfreetype6.so')">
+		<AndroidNativeLibrary Include="jniLibs/arm64-v8a/libfreetype6.so" />
+	</ItemGroup>
+	<ItemGroup Condition="Exists('jniLibs\arm64-v8a\liblua51.so')">
+		<AndroidNativeLibrary Include="jniLibs/arm64-v8a/liblua51.so" />
+	</ItemGroup>
+	<ItemGroup Condition="Exists('jniLibs\arm64-v8a\libsoft_oal.so')">
+		<AndroidNativeLibrary Include="jniLibs/arm64-v8a/libsoft_oal.so" />
 	</ItemGroup>
 </Project>
