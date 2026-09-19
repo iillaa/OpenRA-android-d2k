@@ -215,9 +215,6 @@ namespace OpenRA
 		/// </summary>
 		public static void OverrideSupportDir(string path)
 		{
-			if (supportDirInitialized)
-				throw new InvalidOperationException("Attempted to override user support directory after it has already been accessed.");
-
 			if (!Directory.Exists(path))
 				throw new DirectoryNotFoundException(path);
 
@@ -227,6 +224,14 @@ namespace OpenRA
 			if (!path.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) &&
 					!path.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
 				path += Path.DirectorySeparatorChar;
+
+			if (supportDirInitialized)
+			{
+				if (userSupportPath != null && (userSupportPath == path || userSupportPath.TrimEnd('/', '\\') == path.TrimEnd('/', '\\')))
+					return;
+
+				throw new InvalidOperationException("Attempted to override user support directory after it has already been accessed.");
+			}
 
 			InitializeSupportDir();
 			userSupportPath = path;

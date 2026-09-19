@@ -35,7 +35,7 @@ namespace OpenRA.Android
 		Icon = "@mipmap/ic_launcher",
 		MainLauncher = true,
 		Theme = "@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen",
-		ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.KeyboardHidden | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout,
+		ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.KeyboardHidden | ConfigChanges.Keyboard | ConfigChanges.Navigation | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.Density | ConfigChanges.FontScale,
 		ScreenOrientation = ScreenOrientation.Landscape)]
 	public class MainActivity : Activity
 	{
@@ -45,7 +45,7 @@ namespace OpenRA.Android
 
 		string engineDir;
 		string supportDir;
-		volatile bool engineStarted;
+		static volatile bool engineStarted;
 
 		protected override void OnCreate(Bundle savedInstanceState)
 		{
@@ -265,6 +265,10 @@ namespace OpenRA.Android
 				{
 					global::Android.Util.Log.Error(Tag, $"OpenRA crashed: {e}");
 					CrashHelper.Handle(this, e);
+				}
+				finally
+				{
+					engineStarted = false;
 				}
 			})
 			{ Name = "OpenRA Main", IsBackground = false }.Start();
