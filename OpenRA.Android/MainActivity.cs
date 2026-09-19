@@ -57,6 +57,13 @@ namespace OpenRA.Android
 			supportDir = Path.Combine(GetExternalFilesDir(null).AbsolutePath, "Support") + Path.DirectorySeparatorChar;
 			Directory.CreateDirectory(supportDir);
 
+			// Wire platform logs → in-app DevConsole first so all initialization logs are captured
+			AndroidPlatform.PlatformLogger      = (tag, msg) => DevConsole.Info(tag, msg);
+			AndroidPlatform.PlatformErrorLogger = (tag, msg) => DevConsole.Error(tag, msg);
+
+			// Pre-load and register native libraries (FreeType, OpenAL) with verbose logging
+			AndroidPlatform.Initialize(this);
+
 			var metrics = Resources.DisplayMetrics;
 			window = new AndroidPlatformWindow(metrics.WidthPixels, metrics.HeightPixels);
 			AndroidPlatform.SetWindow(window);
@@ -65,6 +72,11 @@ namespace OpenRA.Android
 			window.HostView = surfaceView;
 			window.KeyboardDrainAction = ih => surfaceView.DrainKeyboardInput(ih);
 			SetContentView(surfaceView);
+
+			// Attach floating debug bubble overlay AFTER SetContentView so it sits on top of SurfaceView
+			var overlay = DebugOverlay.Attach(this);
+			CrashHelper.SetOverlay(overlay);
+			overlay.BringToFront();
 
 			// Start the engine loop immediately. The window's WaitForSurfaceAndInitializeGl handles
 			// the Android surface churn (create->destroy->create during layout) by retrying.
@@ -139,21 +151,14 @@ namespace OpenRA.Android
 			{
 				try
 				{
+					DevConsole.Info("MainActivity", "Game.InitializeAndRun starting...");
 					Game.InitializeAndRun(args);
+					DevConsole.Info("MainActivity", "Game.InitializeAndRun returned normally.");
 				}
 				catch (Exception e)
 				{
 					global::Android.Util.Log.Error(Tag, $"OpenRA crashed: {e}");
-
-					// Write full crash to sdcard so it can be read from Termux without ADB.
-					try
-					{
-						var crashText = $"[{System.DateTime.Now}]\nType: {e.GetType().FullName}\nMessage: {e.Message}\n\nInnerException: {e.InnerException}\n\nStackTrace:\n{e.StackTrace}";
-						System.IO.File.WriteAllText("/sdcard/openra_crash.txt", crashText);
-					}
-					catch { }
-
-					RunOnUiThread(() => Toast.MakeText(this, $"OpenRA crashed: {e.GetType().Name}: {e.Message}", ToastLength.Long)?.Show());
+					CrashHelper.Handle(this, e);
 				}
 			})
 			{ Name = "OpenRA Main", IsBackground = false }.Start();
