@@ -51,8 +51,6 @@ namespace OpenRA.Platforms.Android
 		bool ignoreTouchesUntilAllUp;
 
 		const int TouchSlopPx = 25;
-		const int MaxTapDurationMs = 350;
-		const int MaxTapDistancePx = 25;
 
 		// Physical-mouse state tracking
 		int lastMouseButtonState;
@@ -301,18 +299,11 @@ namespace OpenRA.Platforms.Android
 						break;
 
 					case MotionEventActions.Up:
-						var elapsedMs = p.TimestampMs - primaryDownTimeMs;
-						var moveDist = (pos - primaryDownPos).Length;
-
 						if (!ignoreTouchesUntilAllUp && touchState == TouchGestureState.PotentialTap)
 						{
-							// Only fire a click if it was an intentional, short tap with minimal movement
-							if (moveDist <= MaxTapDistancePx && elapsedMs <= MaxTapDurationMs)
-							{
-								var tapCount = MultiTapDetection.DetectFromMouse(0, primaryDownPos);
-								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, primaryDownPos, int2.Zero, Modifiers.None, tapCount));
-								inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, primaryDownPos, int2.Zero, Modifiers.None, tapCount));
-							}
+							var tapCount = MultiTapDetection.DetectFromMouse(0, primaryDownPos);
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Down, MouseButton.Left, primaryDownPos, int2.Zero, Modifiers.None, tapCount));
+							inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, primaryDownPos, int2.Zero, Modifiers.None, tapCount));
 						}
 						else if (touchState == TouchGestureState.Panning)
 						{
@@ -397,10 +388,19 @@ namespace OpenRA.Platforms.Android
 				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Middle, pos, int2.Zero, Modifiers.None, 1));
 			}
 
-			// If ACTION_UP arrives and previous state had no flags recorded, ensure Left Up is fired
-			if (p.Action == MotionEventActions.Up && prev == 0)
+			// If ACTION_UP arrives, ensure all pressed buttons are released cleanly
+			if (p.Action == MotionEventActions.Up)
 			{
-				inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, MultiTapDetection.InfoFromMouse(0)));
+				if ((curr & MouseBtnPrimary) != 0 || (prev & MouseBtnPrimary) != 0)
+					inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Left, pos, int2.Zero, Modifiers.None, MultiTapDetection.InfoFromMouse(0)));
+
+				if ((curr & MouseBtnSecondary) != 0 || (prev & MouseBtnSecondary) != 0)
+					inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Right, pos, int2.Zero, Modifiers.None, 1));
+
+				if ((curr & MouseBtnTertiary) != 0 || (prev & MouseBtnTertiary) != 0)
+					inputHandler.OnMouseInput(new MouseInput(MouseInputEvent.Up, MouseButton.Middle, pos, int2.Zero, Modifiers.None, 1));
+
+				curr = 0;
 			}
 
 			// Determine held button for dragging

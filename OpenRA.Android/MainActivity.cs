@@ -265,11 +265,29 @@ namespace OpenRA.Android
 				FocusableInTouchMode = true;
 			}
 
-			static bool IsMouseEvent(MotionEvent e)
+			bool lastEventWasMouse;
+
+			bool IsMouseEvent(MotionEvent e)
 			{
-				return e.IsFromSource(InputSourceType.Mouse)
+				var isMouse = e.IsFromSource(InputSourceType.Mouse)
 					|| (int)e.GetToolType(0) == 3 // MotionEventToolType.Mouse
+					|| ((int)e.Source & (int)InputSourceType.ClassPointer) != 0 && (int)e.GetToolType(0) == 3
 					|| e.ButtonState != 0;
+
+				if (isMouse)
+				{
+					lastEventWasMouse = true;
+					return true;
+				}
+
+				if (lastEventWasMouse && (e.ActionMasked == MotionEventActions.Up || e.ActionMasked == MotionEventActions.Cancel))
+				{
+					lastEventWasMouse = false;
+					return true;
+				}
+
+				lastEventWasMouse = false;
+				return false;
 			}
 
 			public override bool OnTouchEvent(MotionEvent e)

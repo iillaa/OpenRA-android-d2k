@@ -19,10 +19,12 @@ namespace OpenRA.Platforms.Android
 	{
 		static readonly int VertexSize = Marshal.SizeOf<T>();
 		uint buffer;
+		int bufferSize;
 		bool disposed;
 
 		public VertexBuffer(int size)
 		{
+			bufferSize = size;
 			OpenGL.glGenBuffers(1, out buffer);
 			OpenGL.CheckGLError();
 			Bind();
@@ -33,45 +35,24 @@ namespace OpenRA.Platforms.Android
 					IntPtr.Zero,
 					OpenGL.GL_DYNAMIC_DRAW);
 			OpenGL.CheckGLError();
-
-			// We need to zero all the memory. Let's generate a smallish array and copy that over the whole buffer.
-			var zeroedArrayElementSize = Math.Min(size, 2048);
-			var ptr = GCHandle.Alloc(new T[zeroedArrayElementSize], GCHandleType.Pinned);
-			try
-			{
-				for (var offset = 0; offset < size; offset += zeroedArrayElementSize)
-				{
-					var length = Math.Min(zeroedArrayElementSize, size - offset);
-					OpenGL.glBufferSubData(OpenGL.GL_ARRAY_BUFFER,
-						new IntPtr(VertexSize * offset),
-						new IntPtr(VertexSize * length),
-						ptr.AddrOfPinnedObject());
-					OpenGL.CheckGLError();
-				}
-			}
-			finally
-			{
-				ptr.Free();
-			}
 		}
 
 		public VertexBuffer(T[] data, bool dynamic = true)
 		{
+			bufferSize = data.Length;
 			OpenGL.glGenBuffers(1, out buffer);
 			OpenGL.CheckGLError();
 			Bind();
 
-			var ptr = GCHandle.Alloc(data, GCHandleType.Pinned);
-			try
+			unsafe
 			{
-				OpenGL.glBufferData(OpenGL.GL_ARRAY_BUFFER,
-					new IntPtr(VertexSize * data.Length),
-					ptr.AddrOfPinnedObject(),
-					dynamic ? OpenGL.GL_DYNAMIC_DRAW : OpenGL.GL_STATIC_DRAW);
-			}
-			finally
-			{
-				ptr.Free();
+				fixed (T* ptr = &data[0])
+				{
+					OpenGL.glBufferData(OpenGL.GL_ARRAY_BUFFER,
+						new IntPtr(VertexSize * data.Length),
+						new IntPtr(ptr),
+						dynamic ? OpenGL.GL_DYNAMIC_DRAW : OpenGL.GL_STATIC_DRAW);
+				}
 			}
 
 			OpenGL.CheckGLError();
@@ -89,19 +70,31 @@ namespace OpenRA.Platforms.Android
 
 		public void SetData(T[] data, int offset, int start, int length)
 		{
+			if (length <= 0)
+				return;
+
 			Bind();
 
-			var ptr = GCHandle.Alloc(data, GCHandleType.Pinned);
-			try
+			// Buffer orphaning: Discard old buffer storage when overwriting from start.
+			// This tells the GPU driver that previous frames/draws can finish with the old buffer
+			// while we get fresh memory without pipeline stalls or alias pool exhaustion.
+			if (start == 0 && bufferSize > 0)
 			{
-				OpenGL.glBufferSubData(OpenGL.GL_ARRAY_BUFFER,
-					new IntPtr(VertexSize * start),
-					new IntPtr(VertexSize * length),
-					ptr.AddrOfPinnedObject() + VertexSize * offset);
+				OpenGL.glBufferData(OpenGL.GL_ARRAY_BUFFER,
+					new IntPtr(VertexSize * bufferSize),
+					IntPtr.Zero,
+					OpenGL.GL_DYNAMIC_DRAW);
 			}
-			finally
+
+			unsafe
 			{
-				ptr.Free();
+				fixed (T* ptr = &data[offset])
+				{
+					OpenGL.glBufferSubData(OpenGL.GL_ARRAY_BUFFER,
+						new IntPtr(VertexSize * start),
+						new IntPtr(VertexSize * length),
+						new IntPtr(ptr));
+				}
 			}
 
 			OpenGL.CheckGLError();
