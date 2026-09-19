@@ -89,6 +89,9 @@ namespace OpenRA.Platforms.Android
 			// HACK: This uses raw pointer offsets to avoid defining structs and types that are 95% unnecessary
 			var glyph = Marshal.ReadIntPtr(IntPtr.Add(face, FreeType.FaceRecGlyphOffset)); // face->glyph
 
+			if (glyph == IntPtr.Zero)
+				return EmptyGlyph;
+
 			var metrics = IntPtr.Add(glyph, FreeType.GlyphSlotMetricsOffset); // face->glyph->metrics
 			var metricsWidth = Marshal.ReadIntPtr(IntPtr.Add(metrics, FreeType.MetricsWidthOffset)); // face->glyph->metrics.width
 			var metricsHeight = Marshal.ReadIntPtr(IntPtr.Add(metrics, FreeType.MetricsHeightOffset)); // face->glyph->metrics.width
@@ -112,6 +115,9 @@ namespace OpenRA.Platforms.Android
 				Size = glyphSize,
 				Data = new byte[glyphSize.Width * glyphSize.Height]
 			};
+
+			if (glyphSize.Width <= 0 || glyphSize.Height <= 0 || bitmapBuffer == IntPtr.Zero)
+				return g;
 
 			unsafe
 			{
