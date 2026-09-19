@@ -479,7 +479,7 @@ namespace OpenRA
 
 				if (platformType == null)
 					throw new InvalidOperationException(
-							$"Platform dll must include exactly one IPlatform implementation: " +
+							"Platform dll must include exactly one IPlatform implementation: " +
 							$"OpenRA.Platforms.{platformName}.{platformName}Platform not found.");
 
 				return (IPlatform)platformType.GetConstructor(Type.EmptyTypes).Invoke(null);
