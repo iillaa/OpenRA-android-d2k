@@ -36,16 +36,31 @@ namespace OpenRA.Platforms.Android
 		{
 			SetThreadAffinity();
 
+			global::Android.Util.Log.Info("OpenRA", $"InitializeOpenGL: eglDisplay={window.Display}, eglSurface={window.Surface}, eglContext={window.ContextPtr}");
+
+			if (window.Display == Egl.EGL_NO_DISPLAY)
+				throw new InvalidOperationException("EGL display not initialized");
+			if (window.ContextPtr == Egl.EGL_NO_CONTEXT)
+				throw new InvalidOperationException("EGL context not initialized");
+			if (window.Surface == Egl.EGL_NO_SURFACE)
+				throw new InvalidOperationException("EGL surface not initialized");
+
 			if (!Egl.eglMakeCurrent(window.Display, window.Surface, window.Surface, window.ContextPtr))
 				throw new InvalidOperationException("Failed to make EGL context current.");
 
+			global::Android.Util.Log.Info("OpenRA", "InitializeOpenGL: eglMakeCurrent succeeded");
+
 			OpenGL.Initialize();
 			OpenGL.CheckGLError();
+
+			global::Android.Util.Log.Info("OpenRA", "InitializeOpenGL: OpenGL.Initialize succeeded");
 
 			OpenGL.glGenVertexArrays(1, out vao);
 			OpenGL.CheckGLError();
 			OpenGL.glBindVertexArray(vao);
 			OpenGL.CheckGLError();
+
+			global::Android.Util.Log.Info("OpenRA", "InitializeOpenGL: complete");
 		}
 
 		public IVertexBuffer<T> CreateEmptyVertexBuffer<T>(int size) where T : struct
