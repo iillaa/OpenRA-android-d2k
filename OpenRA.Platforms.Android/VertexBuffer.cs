@@ -19,12 +19,10 @@ namespace OpenRA.Platforms.Android
 	{
 		static readonly int VertexSize = Marshal.SizeOf<T>();
 		uint buffer;
-		int bufferSize;
 		bool disposed;
 
 		public VertexBuffer(int size)
 		{
-			bufferSize = size;
 			OpenGL.glGenBuffers(1, out buffer);
 			OpenGL.CheckGLError();
 			Bind();
@@ -35,11 +33,29 @@ namespace OpenRA.Platforms.Android
 					IntPtr.Zero,
 					OpenGL.GL_DYNAMIC_DRAW);
 			OpenGL.CheckGLError();
+
+			// Zero all buffer memory so unwritten vertices default cleanly.
+			var zeroedArrayElementSize = Math.Min(size, 2048);
+			var zeroed = new T[zeroedArrayElementSize];
+			unsafe
+			{
+				fixed (T* ptr = &zeroed[0])
+				{
+					for (var offset = 0; offset < size; offset += zeroedArrayElementSize)
+					{
+						var length = Math.Min(zeroedArrayElementSize, size - offset);
+						OpenGL.glBufferSubData(OpenGL.GL_ARRAY_BUFFER,
+							new IntPtr(VertexSize * offset),
+							new IntPtr(VertexSize * length),
+							new IntPtr(ptr));
+						OpenGL.CheckGLError();
+					}
+				}
+			}
 		}
 
 		public VertexBuffer(T[] data, bool dynamic = true)
 		{
-			bufferSize = data.Length;
 			OpenGL.glGenBuffers(1, out buffer);
 			OpenGL.CheckGLError();
 			Bind();
@@ -74,17 +90,6 @@ namespace OpenRA.Platforms.Android
 				return;
 
 			Bind();
-
-			// Buffer orphaning: Discard old buffer storage when overwriting from start.
-			// This tells the GPU driver that previous frames/draws can finish with the old buffer
-			// while we get fresh memory without pipeline stalls or alias pool exhaustion.
-			if (start == 0 && bufferSize > 0)
-			{
-				OpenGL.glBufferData(OpenGL.GL_ARRAY_BUFFER,
-					new IntPtr(VertexSize * bufferSize),
-					IntPtr.Zero,
-					OpenGL.GL_DYNAMIC_DRAW);
-			}
 
 			unsafe
 			{
