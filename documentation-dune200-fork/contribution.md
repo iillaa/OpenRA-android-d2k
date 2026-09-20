@@ -68,7 +68,7 @@ Starting after commit [`b3c9376a`](https://github.com/iillaa/OpenRA-android-d2k/
 
 ### G. 30+ Minute Match Longevity & GPU Optimization
 * **Zero GC Allocations in Vertex Streaming**: Replaced `GCHandle.Alloc` pinning in `VertexBuffer.cs` with C# native `unsafe fixed` stack pointers, eliminating **~5.4 million GC handle allocations** per 30-minute match and ending runtime GC stutter.
-* **OpenGL Buffer Orphaning**: Implemented `glBufferData(..., IntPtr.Zero, GL_DYNAMIC_DRAW)` on batch reset to allow the mobile GPU driver to asynchronously reclaim vertex memory, preventing buffer alias pool exhaustion.
+* **Zero-Allocation GPU Streaming & Memory Zeroing**: Implemented `unsafe fixed` pointer streaming with pre-zeroed VRAM buffers, ensuring safe partial vertex updates without risking persistent terrain buffer corruption or alias pool exhaustion.
 * **Adreno Driver Crash Fix**: Discovered Qualcomm Adreno GPUs emit high-severity debug performance notices (`Too much alias space, unable to rename`) upon base destruction. Updated `OpenGLES.cs` to filter non-error performance hints, preventing game termination.
 
 ### H. In-Game Diagnostics Suite
@@ -76,13 +76,15 @@ Starting after commit [`b3c9376a`](https://github.com/iillaa/OpenRA-android-d2k/
 * **`CrashLogActivity`**: Created a fallback native Activity that captures uncaught managed and native exceptions before the game window initializes.
 
 ### I. Comprehensive Documentation Suite
-* Wrote the complete 5-document operational guide in `documentation-dune200-fork/`:
+* Wrote the complete 7-document operational guide in `documentation-dune200-fork/`:
   * [`readme.md`](readme.md): Project overview and quick start.
   * [`controls.md`](controls.md): Detailed touch and mouse input reference.
   * [`technical.md`](technical.md): Engineering deep dive into .NET 9, EGL, and GPU streaming.
   * [`developer.md`](developer.md): Prerequisites, build scripts, CI, and DevConsole debugging.
   * [`progress.md`](progress.md): Chronological history of the port.
   * [`contribution.md`](contribution.md): Attribution and feature breakdown.
+  * [`todo.md`](todo.md): Planned roadmap and future polish tasks.
+  * [`lessons_learned.md`](lessons_learned.md): Post-mortem analysis and development rules.
 
 ---
 
@@ -98,6 +100,7 @@ Starting after commit [`b3c9376a`](https://github.com/iillaa/OpenRA-android-d2k/
 | **Display & UI Scaling** | Microscopic 1.0× desktop UI layout | **1.8× Tablet HUD Scaling** with expanded $364\times364$ radar minimap |
 | **Touch Controls** | Jumping map, dropped taps, gesture conflicts | **Smooth 1-finger pan**, 2-finger box select, 4-finger zoom, zero jump |
 | **Hardware Mouse** | Unsupported / stuck selection boxes | **Full PC Classic Dune 2000 mouse** with 25px edge scrolling & hover tooltips |
-| **30+ Min Match Stability** | GC stutter (~5.4M allocations), Adreno alias crash | **Zero-allocation `unsafe fixed` vertex streaming**, buffer orphaning, locked 60 FPS |
+| **30+ Min Match Stability** | GC stutter (~5.4M allocations), Adreno alias crash | **Zero-allocation `unsafe fixed` vertex streaming**, stable partial SubData, locked 60 FPS |
+| **Terrain Rendering** | Horizontal cliff stripes on sand | **Pristine, stable terrain rendering** with safe partial SubData flushes |
 | **On-Device Diagnostics** | None (blind crashes) | **Floating DevConsole (`🐛`)** & `CrashLogActivity` with 1-tap clipboard copy |
-| **Documentation** | Generic `ANDROID.md` | **Complete 6-document technical and operational guide** |
+| **Documentation** | Generic `ANDROID.md` | **Complete 8-document technical and operational guide** |

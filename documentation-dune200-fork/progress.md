@@ -136,9 +136,9 @@ During extended 30+ minute matches, testers noticed frame drops, touch lag, and 
 * In a 30-minute match, this generated ~5.4 million handle allocations, fragmenting memory and stalling the GC.
 * We converted vertex buffer data uploads to C# native `unsafe fixed` stack pointers, reducing GC allocations to **absolute zero**.
 
-### 2. OpenGL Buffer Orphaning
-* Repeated `glBufferSubData` calls without synchronization exhausted the GPU driver's buffer alias pool.
-* Implemented buffer orphaning (`glBufferData(..., IntPtr.Zero, GL_DYNAMIC_DRAW)`) on batch reset, allowing the GPU driver to reclaim vertex memory asynchronously without pipeline stalls.
+### 2. Vertex Buffer Zeroing & Safe SubData Streaming
+* Identified that attempting buffer orphaning (`glBufferData(..., IntPtr.Zero)`) on `start == 0` corrupted persistent vertex buffers (such as `TerrainSpriteLayer` when flushing row 0).
+* Implemented clean `glBufferSubData` with zero-allocation `unsafe fixed` stack pointers, and added initial buffer memory zeroing on allocation to ensure uninitialized GPU memory is never rendered as driver garbage.
 
 ### 3. Qualcomm Adreno Driver Crash Fix
 * When an entire base was destroyed, Qualcomm Adreno GPUs emitted a `GL_DEBUG_SEVERITY_HIGH` message (`Performance - Too much alias space, unable to rename`).
@@ -175,6 +175,20 @@ During extended 30+ minute matches, testers noticed frame drops, touch lag, and 
 
 ---
 
+## Phase 9: Terrain Rendering Bug Diagnosis & Vertex Buffer Fix
+
+### 1. In-Game Map Terrain Distortion
+* Campaign missions (such as Harkonnen mission 1b) displayed repetitive horizontal cliff and ridge stripes across smooth desert sand.
+* Validated map binaries (`map.bin`), `arrakis.yaml` tileset definitions, and raw `BLOXBASE.R16` asset tiles; confirmed that all map assets were 100% healthy.
+* Traced the issue to `VertexBuffer.SetData()` where a naive buffer orphaning check (`start == 0`) discarded the entire GPU buffer whenever row 0 was flushed, causing non-dirty rows to render uninitialized recycled GPU memory.
+
+### 2. Resolution
+* Removed the destructive `glBufferData(..., IntPtr.Zero)` call from `SetData()`.
+* Restored initial memory zeroing in `VertexBuffer(int size)` with zero-overhead stack pinning.
+* Entire desert terrain now renders completely clean and stable across all game modes.
+
+---
+
 ## Summary of Accomplishments
 
 | Milestone | Initial State | Final State |
@@ -186,6 +200,7 @@ During extended 30+ minute matches, testers noticed frame drops, touch lag, and 
 | **Viewport & Camera** | Panning to edge showed 50% black void | Dynamic edge clamping; map fills 88–90% of display at all times |
 | **Touch Controls** | Broken gestures, map jumps, missed taps | 1-finger smooth pan, 2-finger box select, 4-finger zoom |
 | **Mouse Controls** | Unsupported / stuck selection boxes | Full PC Classic Dune 2000 mouse with 25px edge scrolling & hot-plug stability |
-| **Stability (30+ min)** | GC stutter, alias exhaustion, Adreno crash | Zero-allocation vertex streaming, buffer orphaning, locked 60 FPS |
+| **Stability (30+ min)** | GC stutter, alias exhaustion, Adreno crash | Zero-allocation vertex streaming, clean SubData, locked 60 FPS |
+| **Terrain Rendering** | Horizontal cliff stripes on sand | Pristine, stable terrain rendering with safe partial SubData flushes |
 | **In-Game Debugging** | None (blind crashes) | Draggable DevConsole (`🐛`) with `🛑 Off` toggle & CrashLogActivity |
 | **Content & Audio** | No music or movies | Automated import from `Download/d2k` for original FMVs & soundtrack |

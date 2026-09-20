@@ -57,19 +57,12 @@ In a typical 30+ minute match, OpenRA submits tens of thousands of quad batches 
 * **Legacy Problem**: [`VertexBuffer.cs`](file:///data/data/com.termux/files/home/chat/dune/OpenRA.Platforms.Android/VertexBuffer.cs) called `GCHandle.Alloc(data, GCHandleType.Pinned)` and `ptr.Free()` on every single quad batch. At 60 FPS with 50 batches per frame, this resulted in **3,000 GC handle allocations/sec** (~5.4 million per match), inducing heavy SGen GC pauses and memory fragmentation.
 * **Solution**: Switched to C# native `unsafe fixed (T* ptr = &data[offset])` stack pinning. Stack pinning incurs **zero GC allocations**, eliminating runtime handle table churn completely.
 
-### B. OpenGL Buffer Orphaning
-* **Legacy Problem**: Continuously writing to the same `tempVertexBuffer` with `glBufferSubData` forced the Adreno GPU driver to allocate internal memory aliases to avoid stalls. Once the driver's alias pool exhausted, the CPU was blocked by GPU pipeline stalls, causing extreme stutter and game slowness.
-* **Solution**: Implemented **Buffer Orphaning**:
-  ```csharp
-  if (start == 0 && bufferSize > 0)
-  {
-      OpenGL.glBufferData(OpenGL.GL_ARRAY_BUFFER,
-          new IntPtr(VertexSize * bufferSize),
-          IntPtr.Zero,
-          OpenGL.GL_DYNAMIC_DRAW);
-  }
-  ```
-  Passing `IntPtr.Zero` informs the driver that the previous contents can be discarded. The driver immediately provides a fresh memory block with zero stalls.
+### B. Vertex Buffer Stability & Memory Zeroing
+* **Architecture**: OpenRA uses `VertexBuffer` for two very different workloads:
+  1. High-frequency transient batching (`tempVertexBuffer` in `Renderer.cs`), flushed multiple times per frame.
+  2. Persistent world-space layers (`TerrainSpriteLayer` in `OpenRA.Game/Graphics/TerrainSpriteLayer.cs`), created once per map and updated incrementally row-by-row (`start = vertexRowStride * row`).
+* **The Pitfall of Buffer Orphaning**: Attempting OpenGL buffer orphaning (`glBufferData(..., IntPtr.Zero)`) in `SetData` when `start == 0` causes catastrophic map corruption: flushing row 0 wipes the entire map geometry from VRAM, leaving non-dirty rows populated with recycled GPU memory garbage.
+* **Solution**: `SetData` uses direct `glBufferSubData` to safely patch only the affected rows without altering persistent buffer storage, while `VertexBuffer(int size)` pre-zeroes VRAM at allocation using zero-overhead unsafe stack pointers.
 
 ---
 

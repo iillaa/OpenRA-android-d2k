@@ -21,7 +21,7 @@ This project brings Westwood Studios' legendary classic RTS *Dune 2000* to moder
   * **Bluetooth / Hardware Mouse**: True PC-style desktop gameplay with native Left-Click box selection, Right-Click move/attack commands, Scroll Wheel zoom, 25px screen-edge scrolling, and hot-plug resilience.
 * **Engineered for Long Matches (Zero Memory Leaks / No Stalls)**:
   * Zero-allocation streaming vertex buffers using native C# `unsafe fixed` stack pointers, eliminating millions of GC handle allocations in 30+ minute matches.
-  * OpenGL **Buffer Orphaning** (`glBufferData(..., IntPtr.Zero, ...)`) that completely prevents Qualcomm Adreno GPU driver alias pool exhaustion and pipeline stalls.
+  * Rock-solid GPU vertex updates via clean `glBufferSubData` and pre-zeroed buffers, ensuring glitch-free terrain and artifact-free map rendering.
 * **Automated Asset Importer**: Automatically detects and imports original soundtrack music (`.aud`) and video cutscenes (`.vqa`) placed in `/sdcard/Download/d2k`.
 * **Built-in Diagnostic & Developer Tools**:
   * Floating draggable **DevConsole** bubble (`🐛`) with full-screen color-coded logs, clipboard copy, and a `🛑 Off` shutdown button to completely disable logging overhead when not needed.
